@@ -124,6 +124,8 @@ public final class Compilation {
       return new CheckedSoySyntaxException((PlovrSoySyntaxException) e);
     } else if (e instanceof PlovrCoffeeScriptCompilerException) {
       return new CheckedCoffeeScriptCompilerException((PlovrCoffeeScriptCompilerException) e);
+    } else if (e instanceof PlovrBabelScriptCompilerException) {
+      return new CheckedBabelScriptCompilerException((PlovrBabelScriptCompilerException) e);
     }
     throw Throwables.propagate(e);
   }

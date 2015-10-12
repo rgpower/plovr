@@ -107,6 +107,21 @@ abstract class AbstractJavaScriptBasedCompiler<T extends Exception> {
       return message;
     }
 
+    // JDK 9.
+    try {
+      Method get = result.getClass().getMethod("get", new Class[] { Object.class });
+      Object getResult = get.invoke(result, "message");
+      if (getResult != null) {
+        message = getResult.toString();
+      }
+    } catch(Exception e) {
+
+    }
+
+    if (message != null) {
+      return message;
+    }
+
     return null;
   }
 
