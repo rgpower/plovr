@@ -109,7 +109,7 @@ public final class Compilation {
     }
 
     try {
-      PlovrClosureCompiler dummyCompiler = new PlovrClosureCompiler(config.getErrorStream());
+      PlovrClosureCompiler dummyCompiler = new PlovrClosureCompiler(new PlovrErrorManager(config));
       Compilation compilation = config.getManifest().getCompilerArguments(
           config.getModuleConfig(), config.getCompilerOptions(dummyCompiler));
       compilation.compile(config);
@@ -126,6 +126,8 @@ public final class Compilation {
       return new CheckedSoySyntaxException((PlovrSoySyntaxException) e);
     } else if (e instanceof PlovrCoffeeScriptCompilerException) {
       return new CheckedCoffeeScriptCompilerException((PlovrCoffeeScriptCompilerException) e);
+    } else if (e instanceof PlovrBabelScriptCompilerException) {
+      return new CheckedBabelScriptCompilerException((PlovrBabelScriptCompilerException) e);
     }
     throw Throwables.propagate(e);
   }
@@ -136,7 +138,7 @@ public final class Compilation {
     if (config.getCompilationMode() == CompilationMode.RAW) {
       compileRaw(config);
     } else {
-      PlovrClosureCompiler compiler = new PlovrClosureCompiler(config.getErrorStream());
+      PlovrClosureCompiler compiler = new PlovrClosureCompiler(new PlovrErrorManager(config));
       compile(config, compiler, config.getCompilerOptions(compiler));
     }
   }

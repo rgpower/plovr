@@ -99,9 +99,14 @@ public final class HttpUtil {
     Writer responseBody = new OutputStreamWriter(exchange.getResponseBody());
     responseBody.write(message);
     responseBody.close();
-  };
+  }
 
-  /**
+ public static String getRequestHeader(String key, HttpExchange exchange) {
+    Headers headers = exchange.getRequestHeaders();
+    return headers.containsKey(key) ? headers.getFirst(key) : null;
+  }
+
+    /**
    * Returns a 400 with the specified HTML message.
    */
   public static void writeHtmlErrorMessageResponse(HttpExchange exchange,

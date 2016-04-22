@@ -33,11 +33,13 @@ public class SoyFile extends LocalFileJsInput {
 
   private final Injector injector;
 
+  private final SoyFileOptions soyFileOptions;
   private final SoyJsSrcOptions jsSrcOptions;
 
   SoyFile(String name, File source, SoyFileOptions soyFileOptions) {
     super(name, source);
     this.injector = createInjector(soyFileOptions.pluginModuleNames);
+    this.soyFileOptions = soyFileOptions;
     this.jsSrcOptions = get(soyFileOptions);
   }
 
@@ -48,11 +50,7 @@ public class SoyFile extends LocalFileJsInput {
       value.setShouldGenerateJsdoc(true);
       value.setShouldProvideRequireSoyNamespaces(options.useClosureLibrary);
       value.setShouldDeclareTopLevelNamespaces(options.useClosureLibrary);
-      //value.setIsUsingIjData(options.isUsingInjectedData);
-      value.setShouldProvideBothSoyNamespacesAndJsFunctions(true);
-      value.setShouldGenerateGoogMsgDefs(options.useClosureLibrary);
-      value.setUseGoogIsRtlForBidiGlobalDir(options.useClosureLibrary);
-
+      value.setShouldProvideBothSoyNamespacesAndJsFunctions(options.useClosureLibrary);
       jsSrcOptionsMap.put(options, value);
     }
 
@@ -64,7 +62,7 @@ public class SoyFile extends LocalFileJsInput {
     SoyFileSet.Builder builder = injector.getInstance(SoyFileSet.Builder.class);
     builder.add(getSource());
     SoyFileSet fileSet = builder.build();
-    final SoyMsgBundle msgBundle = null;
+    final SoyMsgBundle msgBundle = this.soyFileOptions.soyMsgBundle;
     try {
       String code = fileSet.compileToJsSrc(jsSrcOptions, msgBundle).get(0);
       logger.fine(code);
