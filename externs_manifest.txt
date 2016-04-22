@@ -47,6 +47,7 @@ browser/webkit_css.js
 browser/webkit_dom.js
 browser/webkit_event.js
 browser/webkit_notifications.js
+browser/webkit_usercontent.js
 browser/webstorage.js
 browser/whatwg_encoding.js
 browser/window.js

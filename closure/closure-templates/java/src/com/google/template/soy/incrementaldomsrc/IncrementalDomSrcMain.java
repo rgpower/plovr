@@ -23,7 +23,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Multimap;
 import com.google.common.io.Files;
-import com.google.inject.Key;
 import com.google.template.soy.base.SoySyntaxException;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.html.passes.HtmlTransformVisitor;
@@ -31,16 +30,16 @@ import com.google.template.soy.internal.i18n.BidiGlobalDir;
 import com.google.template.soy.internal.i18n.SoyBidiUtils;
 import com.google.template.soy.jssrc.SoyJsSrcOptions;
 import com.google.template.soy.jssrc.internal.OptimizeBidiCodeGenVisitor;
-import com.google.template.soy.passes.IjDataQueries;
 import com.google.template.soy.shared.internal.ApiCallScopeUtils;
 import com.google.template.soy.shared.internal.GuiceSimpleScope;
 import com.google.template.soy.shared.internal.GuiceSimpleScope.WithScope;
 import com.google.template.soy.shared.internal.MainEntryPointUtils;
 import com.google.template.soy.shared.restricted.ApiCallScopeBindingAnnotations.ApiCall;
-import com.google.template.soy.shared.restricted.ApiCallScopeBindingAnnotations.IsUsingIjData;
 import com.google.template.soy.sharedpasses.opti.SimplifyVisitor;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
+import com.google.template.soy.soytree.TemplateRegistry;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.Writer;
@@ -69,16 +68,13 @@ public class IncrementalDomSrcMain {
   /** Provider for getting an instance of GenJsCodeVisitor. */
   private final Provider<GenIncrementalDomCodeVisitor> genIncrementalDomCodeVisitorProvider;
 
-  /** For reporting errors during code generation. */
-  private final ErrorReporter errorReporter;
-
 
   /**
    * @param apiCallScope The scope object that manages the API call scope.
    * @param simplifyVisitor The instance of SimplifyVisitor to use.
    * @param optimizeBidiCodeGenVisitorProvider Provider for getting an instance of
    *     OptimizeBidiCodeGenVisitor.
-   * @param genIncrementalDomCodeVisitorProvider Provider for getting an instance of 
+   * @param genIncrementalDomCodeVisitorProvider Provider for getting an instance of
    *     GenIncrementalDomCodeVisitor.
    */
   @Inject
@@ -86,13 +82,11 @@ public class IncrementalDomSrcMain {
       @ApiCall GuiceSimpleScope apiCallScope,
       SimplifyVisitor simplifyVisitor,
       Provider<OptimizeBidiCodeGenVisitor> optimizeBidiCodeGenVisitorProvider,
-      Provider<GenIncrementalDomCodeVisitor> genIncrementalDomCodeVisitorProvider,
-      ErrorReporter errorReporter) {
+      Provider<GenIncrementalDomCodeVisitor> genIncrementalDomCodeVisitorProvider) {
     this.apiCallScope = apiCallScope;
     this.simplifyVisitor = simplifyVisitor;
     this.optimizeBidiCodeGenVisitorProvider = optimizeBidiCodeGenVisitorProvider;
     this.genIncrementalDomCodeVisitorProvider = genIncrementalDomCodeVisitorProvider;
-    this.errorReporter = errorReporter;
   }
 
 
@@ -108,13 +102,11 @@ public class IncrementalDomSrcMain {
    */
   public List<String> genJsSrc(
       SoyFileSetNode soyTree,
-      SoyJsSrcOptions jsSrcOptions)
+      TemplateRegistry registry,
+      SoyJsSrcOptions jsSrcOptions,
+      ErrorReporter errorReporter)
       throws SoySyntaxException {
 
-    // Generate code with the opt_ijData param if either (a) the user specified the compiler flag
-    // --isUsingIjData or (b) any of the Soy code in the file set references injected data.
-    boolean isUsingIjData = jsSrcOptions.isUsingIjData()
-        || IjDataQueries.isUsingIj(soyTree);
 
     // Make sure that we don't try to use goog.i18n.bidi when we aren't supposed to use Closure.
     Preconditions.checkState(
@@ -129,7 +121,6 @@ public class IncrementalDomSrcMain {
     try (WithScope withScope = apiCallScope.enter()) {
       // Seed the scoped parameters.
       apiCallScope.seed(SoyJsSrcOptions.class, jsSrcOptions);
-      apiCallScope.seed(Key.get(Boolean.class, IsUsingIjData.class), isUsingIjData);
       BidiGlobalDir bidiGlobalDir = SoyBidiUtils.decodeBidiGlobalDirFromJsOptions(
           jsSrcOptions.getBidiGlobalDir(),
           jsSrcOptions.getUseGoogIsRtlForBidiGlobalDir());
@@ -145,13 +136,13 @@ public class IncrementalDomSrcMain {
 
       // Do the code generation.
       optimizeBidiCodeGenVisitorProvider.get().exec(soyTree);
-      simplifyVisitor.exec(soyTree);
+      simplifyVisitor.simplify(soyTree, registry);
 
       new HtmlTransformVisitor(errorReporter).exec(soyTree);
       IncrementalDomOutputOptimizers.collapseOpenTags(soyTree);
       IncrementalDomOutputOptimizers.collapseElements(soyTree);
 
-      return genIncrementalDomCodeVisitorProvider.get().exec(soyTree);
+      return genIncrementalDomCodeVisitorProvider.get().gen(soyTree, registry, errorReporter);
     }
   }
 
@@ -168,11 +159,13 @@ public class IncrementalDomSrcMain {
    */
   public void genJsFiles(
       SoyFileSetNode soyTree,
+      TemplateRegistry templateRegistry,
       SoyJsSrcOptions jsSrcOptions,
-      String outputPathFormat)
+      String outputPathFormat,
+      ErrorReporter errorReporter)
       throws SoySyntaxException, IOException {
 
-    List<String> jsFileContents = genJsSrc(soyTree, jsSrcOptions);
+    List<String> jsFileContents = genJsSrc(soyTree, templateRegistry, jsSrcOptions, errorReporter);
 
     ImmutableList<SoyFileNode> srcsToCompile = ImmutableList.copyOf(Iterables.filter(
         soyTree.getChildren(), SoyFileNode.MATCH_SRC_FILENODE));

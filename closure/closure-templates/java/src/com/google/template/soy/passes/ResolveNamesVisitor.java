@@ -22,7 +22,7 @@ import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.error.ErrorReporter;
-import com.google.template.soy.error.SoyError;
+import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.exprtree.AbstractExprNodeVisitor;
 import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.ExprNode.ParentExprNode;
@@ -61,8 +61,8 @@ import java.util.Map;
  */
 final class ResolveNamesVisitor extends AbstractSoyNodeVisitor<Void> {
 
-  private static final SoyError VARIABLE_ALREADY_DEFINED =
-      SoyError.of("variable ''${0}'' already defined{1}");
+  private static final SoyErrorKind VARIABLE_ALREADY_DEFINED =
+      SoyErrorKind.of("variable ''${0}'' already defined{1}");
 
   /**
    * A data structure that assigns a unique (small) integer to all local variable definitions that
@@ -158,13 +158,17 @@ final class ResolveNamesVisitor extends AbstractSoyNodeVisitor<Void> {
      * extra implicit local variables for tracking the current index and whether or not we are at
      * the last index.
      */
-    void define(LoopVar defn, SoyNode definingNode) {
+    boolean define(LoopVar defn, SoyNode definingNode) {
+      if (!define((VarDefn) defn, definingNode)) {
+        return false;
+      }
+      // only allocate the extra slots if definition succeeded
       defn.setExtraLoopIndices(claimSlot(), claimSlot());
-      define((VarDefn) defn, definingNode);
+      return true;
     }
 
     /** Defines a variable. */
-    void define(VarDefn defn, SoyNode definingNode) {
+    boolean define(VarDefn defn, SoyNode definingNode) {
       // Search for the name to see if it is being redefined.
       VarDefn preexisting = lookup(defn.name());
       if (preexisting != null) {
@@ -174,10 +178,11 @@ final class ResolveNamesVisitor extends AbstractSoyNodeVisitor<Void> {
             : "";
         errorReporter.report(
             definingNode.getSourceLocation(), VARIABLE_ALREADY_DEFINED, defn.name(), location);
-        return;
+        return false;
       }
       currentScope.peek().put(defn.name(), defn);
       defn.setLocalVariableIndex(claimSlot());
+      return true;
     }
 
 
@@ -346,7 +351,7 @@ final class ResolveNamesVisitor extends AbstractSoyNodeVisitor<Void> {
     }
 
     @Override protected void visitVarRefNode(VarRefNode varRef) {
-      if (varRef.isInjected()) {
+      if (varRef.isDollarSignIjParameter()) {
         InjectedParam ijParam = ijParams.get(varRef.getName());
         if (ijParam == null) {
           ijParam = new InjectedParam(varRef.getName());

@@ -94,16 +94,6 @@ public final class SoyToJsSrcCompiler {
           usage = "User-declared syntax version for the Soy file bundle (e.g. 2.0, 2.3).")
   private String syntaxVersion = "";
 
-  @Option(name = "--isUsingIjData",
-          usage = "Whether to enable use of injected data (syntax is '$ij.*').",
-          handler = MainClassUtils.BooleanOptionHandler.class)
-  private boolean isUsingIjData = false;
-
-  // TODO(user): remove
-  @Option(name = "--codeStyle",
-          usage = "The code style to use when generating JS code ('stringbuilder' or 'concat').")
-  private String codeStyle = "concat";
-
   @Option(name = "--shouldGenerateJsdoc",
           usage = "Whether we should generate JSDoc with type info for the Closure Compiler." +
                   " Note the generated JSDoc does not have description text, only types for the" +
@@ -231,17 +221,18 @@ public final class SoyToJsSrcCompiler {
    * @throws SoySyntaxException If a syntax error is detected.
    */
   public static void main(final String[] args) throws IOException, SoySyntaxException {
-    MainClassUtils.run(new Main() {
-      @Override
-      public CompilationResult main() throws IOException {
-        return new SoyToJsSrcCompiler().execMain(args);
-      }
-    });
+    MainClassUtils.run(
+        new Main() {
+          @Override
+          public void main() throws IOException {
+            new SoyToJsSrcCompiler().execMain(args);
+          }
+        });
   }
 
   private SoyToJsSrcCompiler() {}
 
-  private CompilationResult execMain(String[] args) throws IOException {
+  private void execMain(String[] args) throws IOException {
 
     final CmdLineParser cmdLineParser = MainClassUtils.parseFlags(this, args, USAGE_PREFIX);
 
@@ -277,7 +268,6 @@ public final class SoyToJsSrcCompiler {
 
     // Create SoyJsSrcOptions.
     SoyJsSrcOptions jsSrcOptions = new SoyJsSrcOptions();
-    jsSrcOptions.setIsUsingIjData(isUsingIjData);
     jsSrcOptions.setShouldGenerateJsdoc(shouldGenerateJsdoc);
     jsSrcOptions.setShouldProvideRequireSoyNamespaces(shouldProvideRequireSoyNamespaces);
     jsSrcOptions.setShouldDeclareTopLevelNamespaces(shouldDeclareTopLevelNamespaces);
@@ -288,10 +278,11 @@ public final class SoyToJsSrcCompiler {
 
     // Compile.
     boolean generateLocalizedJs = !locales.isEmpty();
-    return generateLocalizedJs
-        ? sfs.compileToJsSrcFiles(
-        outputPathFormat, inputPrefix, jsSrcOptions, locales, messageFilePathFormat)
-        : sfs.compileToJsSrcFiles(
-            outputPathFormat, inputPrefix, jsSrcOptions, locales, null);
+    if (generateLocalizedJs) {
+      sfs.compileToJsSrcFiles(
+          outputPathFormat, inputPrefix, jsSrcOptions, locales, messageFilePathFormat);
+    } else {
+      sfs.compileToJsSrcFiles(outputPathFormat, inputPrefix, jsSrcOptions, locales, null);
+    }
   }
 }

@@ -29,6 +29,7 @@ crypt/blockcipher.js
 crypt/bytestring_perf.js
 crypt/cbc.js
 crypt/crypt.js
+crypt/ctr.js
 crypt/hash.js
 crypt/hash32.js
 crypt/hashtester.js
@@ -90,6 +91,7 @@ debug/relativetimeprovider.js
 debug/tracer.js
 demos/autocompleteremotedata.js
 demos/autocompleterichremotedata.js
+demos/editor/deps.js
 demos/editor/helloworld.js
 demos/editor/helloworlddialog.js
 demos/editor/helloworlddialogplugin.js
@@ -97,6 +99,7 @@ demos/graphics/tigerdata.js
 demos/samplecomponent.js
 demos/tree/testdata.js
 demos/xpc/xpcdemo.js
+deps.js
 disposable/disposable.js
 disposable/idisposable.js
 dom/abstractmultirange.js
@@ -297,10 +300,15 @@ history/html5history.js
 html/flash.js
 html/legacyconversions.js
 html/safehtml.js
+html/safehtmlformatter.js
 html/safescript.js
 html/safestyle.js
 html/safestylesheet.js
 html/safeurl.js
+html/sanitizer/attributewhitelist.js
+html/sanitizer/csssanitizer.js
+html/sanitizer/tagblacklist.js
+html/sanitizer/tagwhitelist.js
 html/silverlight.js
 html/testing.js
 html/trustedresourceurl.js
@@ -372,7 +380,6 @@ labs/net/webchannel.js
 labs/net/webchanneltransport.js
 labs/net/webchanneltransportfactory.js
 labs/net/xhr.js
-labs/object/object.js
 labs/promise/promise.js
 labs/pubsub/broadcastpubsub.js
 labs/storage/boundedcollectablestorage.js

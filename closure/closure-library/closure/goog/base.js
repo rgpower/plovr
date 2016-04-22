@@ -161,7 +161,8 @@ goog.define = function(name, defaultValue) {
         Object.prototype.hasOwnProperty.call(
             goog.global.CLOSURE_UNCOMPILED_DEFINES, name)) {
       value = goog.global.CLOSURE_UNCOMPILED_DEFINES[name];
-    } else if (goog.global.CLOSURE_DEFINES &&
+    } else if (
+        goog.global.CLOSURE_DEFINES &&
         Object.prototype.hasOwnProperty.call(
             goog.global.CLOSURE_DEFINES, name)) {
       value = goog.global.CLOSURE_DEFINES[name];
@@ -223,7 +224,7 @@ goog.define('goog.TRUSTED_SITE', true);
  *
  * This define can be used to trigger alternate implementations compatible with
  * running in EcmaScript Strict mode or warn about unavailable functionality.
- * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions_and_function_scope/Strict_mode
+ * @see https://goo.gl/g5EoHI
  *
  */
 goog.define('goog.STRICT_MODE_COMPATIBLE', false);
@@ -266,6 +267,9 @@ goog.define('goog.ENABLE_CHROME_APP_SAFE_SCRIPT_LOADING', false);
  *     "goog.package.part".
  */
 goog.provide = function(name) {
+  if (goog.isInModuleLoader_()) {
+    throw Error('goog.provide can not be used within a goog.module.');
+  }
   if (!COMPILED) {
     // Ensure that the same namespace isn't provided twice.
     // A goog.module/goog.provide maps a goog.require to a specific file
@@ -343,8 +347,7 @@ goog.VALID_MODULE_RE_ = /^[a-zA-Z_$][a-zA-Z0-9._$]*$/;
  *     "goog.package.part", is expected but not required.
  */
 goog.module = function(name) {
-  if (!goog.isString(name) ||
-      !name ||
+  if (!goog.isString(name) || !name ||
       name.search(goog.VALID_MODULE_RE_) == -1) {
     throw Error('Invalid module identifier');
   }
@@ -392,9 +395,8 @@ goog.module.getInternal_ = function(name) {
   if (!COMPILED) {
     if (goog.isProvided_(name)) {
       // goog.require only return a value with-in goog.module files.
-      return name in goog.loadedModules_ ?
-          goog.loadedModules_[name] :
-          goog.getObjectByName(name);
+      return name in goog.loadedModules_ ? goog.loadedModules_[name] :
+                                           goog.getObjectByName(name);
     } else {
       return null;
     }
@@ -425,11 +427,13 @@ goog.isInModuleLoader_ = function() {
  */
 goog.module.declareLegacyNamespace = function() {
   if (!COMPILED && !goog.isInModuleLoader_()) {
-    throw new Error('goog.module.declareLegacyNamespace must be called from ' +
+    throw new Error(
+        'goog.module.declareLegacyNamespace must be called from ' +
         'within a goog.module');
   }
   if (!COMPILED && !goog.moduleLoaderState_.moduleName) {
-    throw Error('goog.module must be called prior to ' +
+    throw Error(
+        'goog.module must be called prior to ' +
         'goog.module.declareLegacyNamespace.');
   }
   goog.moduleLoaderState_.declareLegacyNamespace = true;
@@ -450,8 +454,9 @@ goog.module.declareLegacyNamespace = function() {
 goog.setTestOnly = function(opt_message) {
   if (goog.DISALLOW_TEST_ONLY_CODE) {
     opt_message = opt_message || '';
-    throw Error('Importing test-only code into non-debug environment' +
-                (opt_message ? ': ' + opt_message : '.'));
+    throw Error(
+        'Importing test-only code into non-debug environment' +
+        (opt_message ? ': ' + opt_message : '.'));
   }
 };
 
@@ -486,7 +491,6 @@ goog.forwardDeclare('XMLHttpRequest');
 
 
 if (!COMPILED) {
-
   /**
    * Check if the given name has been goog.provided. This will return false for
    * names that are available only as implicit namespaces.
@@ -497,7 +501,7 @@ if (!COMPILED) {
   goog.isProvided_ = function(name) {
     return (name in goog.loadedModules_) ||
         (!goog.implicitNamespaces_[name] &&
-            goog.isDefAndNotNull(goog.getObjectByName(name)));
+         goog.isDefAndNotNull(goog.getObjectByName(name)));
   };
 
   /**
@@ -531,7 +535,7 @@ if (!COMPILED) {
 goog.getObjectByName = function(name, opt_obj) {
   var parts = name.split('.');
   var cur = opt_obj || goog.global;
-  for (var part; part = parts.shift(); ) {
+  for (var part; part = parts.shift();) {
     if (goog.isDefAndNotNull(cur[part])) {
       cur = cur[part];
     } else {
@@ -565,17 +569,22 @@ goog.globalize = function(obj, opt_global) {
  *     the names of the objects this file provides.
  * @param {!Array<string>} requires An array of strings with
  *     the names of the objects this file requires.
- * @param {boolean=} opt_isModule Whether this dependency must be loaded as
- *     a module as declared by goog.module.
+ * @param {boolean|!Object<string>=} opt_loadFlags Parameters indicating
+ *     how the file must be loaded.  The boolean 'true' is equivalent
+ *     to {'module': 'goog'} for backwards-compatibility.  Valid properties
+ *     and values include {'module': 'goog'} and {'lang': 'es6'}.
  */
-goog.addDependency = function(relPath, provides, requires, opt_isModule) {
+goog.addDependency = function(relPath, provides, requires, opt_loadFlags) {
   if (goog.DEPENDENCIES_ENABLED) {
     var provide, require;
     var path = relPath.replace(/\\/g, '/');
     var deps = goog.dependencies_;
+    if (!opt_loadFlags || typeof opt_loadFlags === 'boolean') {
+      opt_loadFlags = opt_loadFlags ? {'module': 'goog'} : {};
+    }
     for (var i = 0; provide = provides[i]; i++) {
       deps.nameToPath[provide] = path;
-      deps.pathIsModule[path] = !!opt_isModule;
+      deps.pathIsModule[path] = opt_loadFlags['module'] == 'goog';
     }
     for (var j = 0; require = requires[j]; j++) {
       if (!(path in deps.requires)) {
@@ -796,7 +805,6 @@ goog.DEPENDENCIES_ENABLED = !COMPILED && goog.ENABLE_DEBUG_LOADER;
 
 
 if (goog.DEPENDENCIES_ENABLED) {
-
   /**
    * This object is used to keep track of dependencies and other data that is
    * used for loading scripts.
@@ -811,18 +819,18 @@ if (goog.DEPENDENCIES_ENABLED) {
    * }}
    */
   goog.dependencies_ = {
-    pathIsModule: {}, // 1 to 1
+    pathIsModule: {},  // 1 to 1
 
-    nameToPath: {}, // 1 to 1
+    nameToPath: {},  // 1 to 1
 
-    requires: {}, // 1 to many
+    requires: {},  // 1 to many
 
     // Used when resolving dependencies to prevent us from visiting file twice.
     visited: {},
 
-    written: {}, // Used to keep track of script files we have written.
+    written: {},  // Used to keep track of script files we have written.
 
-    deferred: {} // Used to track deferred module evaluations in old IEs
+    deferred: {}  // Used to track deferred module evaluations in old IEs
   };
 
 
@@ -875,8 +883,8 @@ if (goog.DEPENDENCIES_ENABLED) {
    * @private
    */
   goog.importScript_ = function(src, opt_sourceText) {
-    var importScript = goog.global.CLOSURE_IMPORT_SCRIPT ||
-        goog.writeScriptTag_;
+    var importScript =
+        goog.global.CLOSURE_IMPORT_SCRIPT || goog.writeScriptTag_;
     if (importScript(src, opt_sourceText)) {
       goog.dependencies_.written[src] = true;
     }
@@ -884,8 +892,8 @@ if (goog.DEPENDENCIES_ENABLED) {
 
 
   /** @const @private {boolean} */
-  goog.IS_OLD_IE_ = !!(!goog.global.atob && goog.global.document &&
-      goog.global.document.all);
+  goog.IS_OLD_IE_ =
+      !!(!goog.global.atob && goog.global.document && goog.global.document.all);
 
 
   /**
@@ -898,9 +906,7 @@ if (goog.DEPENDENCIES_ENABLED) {
     // synchronous XHRs, put each load in its own script block.
     var bootstrap = 'goog.retrieveAndExecModule_("' + src + '");';
 
-    if (goog.importScript_('', bootstrap)) {
-      goog.dependencies_.written[src] = true;
-    }
+    goog.importScript_('', bootstrap);
   };
 
 
@@ -920,9 +926,8 @@ if (goog.DEPENDENCIES_ENABLED) {
     if (!goog.LOAD_MODULE_USING_EVAL || !goog.isDef(goog.global.JSON)) {
       return '' +
           'goog.loadModule(function(exports) {' +
-          '"use strict";' +
-          scriptText +
-          '\n' + // terminate any trailing single line comment.
+          '"use strict";' + scriptText +
+          '\n' +  // terminate any trailing single line comment.
           ';return exports' +
           '});' +
           '\n//# sourceURL=' + srcUrl + '\n';
@@ -981,8 +986,7 @@ if (goog.DEPENDENCIES_ENABLED) {
    * @private
    */
   goog.maybeProcessDeferredDep_ = function(name) {
-    if (goog.isDeferredModule_(name) &&
-        goog.allDepsAreAvailable_(name)) {
+    if (goog.isDeferredModule_(name) && goog.allDepsAreAvailable_(name)) {
       var path = goog.getPathFromDeps_(name);
       goog.maybeProcessDeferredPath_(goog.basePath + path);
     }
@@ -1137,7 +1141,8 @@ if (goog.DEPENDENCIES_ENABLED) {
    */
   goog.writeScriptSrcNode_ = function(src) {
     goog.global.document.write(
-        '<script type="text/javascript" src="' + src + '"></' + 'script>');
+        '<script type="text/javascript" src="' + src + '"></' +
+        'script>');
   };
 
 
@@ -1162,8 +1167,8 @@ if (goog.DEPENDENCIES_ENABLED) {
   goog.appendScriptSrcNode_ = function(src) {
     /** @type {Document} */
     var doc = goog.global.document;
-    var scriptEl = /** @type {HTMLScriptElement} */ (
-        doc.createElement('script'));
+    var scriptEl =
+        /** @type {HTMLScriptElement} */ (doc.createElement('script'));
     scriptEl.type = 'text/javascript';
     scriptEl.src = src;
     scriptEl.defer = false;
@@ -1217,14 +1222,14 @@ if (goog.DEPENDENCIES_ENABLED) {
           var state = " onreadystatechange='goog.onScriptLoad_(this, " +
               ++goog.lastNonModuleScriptIndex_ + ")' ";
           doc.write(
-              '<script type="text/javascript" src="' +
-                  src + '"' + state + '></' + 'script>');
+              '<script type="text/javascript" src="' + src + '"' + state +
+              '></' +
+              'script>');
         }
       } else {
         doc.write(
-            '<script type="text/javascript">' +
-            opt_sourceText +
-            '</' + 'script>');
+            '<script type="text/javascript">' + opt_sourceText + '</' +
+            'script>');
       }
       return true;
     } else {
@@ -1371,8 +1376,9 @@ goog.normalizePath_ = function(path) {
   while (i < components.length) {
     if (components[i] == '.') {
       components.splice(i, 1);
-    } else if (i && components[i] == '..' &&
-        components[i - 1] && components[i - 1] != '..') {
+    } else if (
+        i && components[i] == '..' && components[i - 1] &&
+        components[i - 1] != '..') {
       components.splice(--i, 2);
     } else {
       i++;
@@ -1414,8 +1420,8 @@ goog.retrieveAndExecModule_ = function(src) {
     // console doesn't auto-canonicalize XHR loads as it does <script> srcs.
     src = goog.normalizePath_(src);
 
-    var importScript = goog.global.CLOSURE_IMPORT_SCRIPT ||
-        goog.writeScriptTag_;
+    var importScript =
+        goog.global.CLOSURE_IMPORT_SCRIPT || goog.writeScriptTag_;
 
     var scriptText = goog.loadFileSync_(src);
 
@@ -1496,11 +1502,11 @@ goog.typeOf = function(value) {
            // boundaries (not iframe though) so we have to do object detection
            // for this edge case.
            typeof value.length == 'number' &&
-           typeof value.splice != 'undefined' &&
-           typeof value.propertyIsEnumerable != 'undefined' &&
-           !value.propertyIsEnumerable('splice')
+               typeof value.splice != 'undefined' &&
+               typeof value.propertyIsEnumerable != 'undefined' &&
+               !value.propertyIsEnumerable('splice')
 
-          )) {
+               )) {
         return 'array';
       }
       // HACK: There is still an array case that fails.
@@ -1518,9 +1524,9 @@ goog.typeOf = function(value) {
       // 'function'. However, if the object has a call property, it is a
       // function.
       if ((className == '[object Function]' ||
-          typeof value.call != 'undefined' &&
-          typeof value.propertyIsEnumerable != 'undefined' &&
-          !value.propertyIsEnumerable('call'))) {
+           typeof value.call != 'undefined' &&
+               typeof value.propertyIsEnumerable != 'undefined' &&
+               !value.propertyIsEnumerable('call'))) {
         return 'function';
       }
 
@@ -1819,9 +1825,7 @@ goog.bindJs_ = function(fn, selfObj, var_args) {
     };
 
   } else {
-    return function() {
-      return fn.apply(selfObj, arguments);
-    };
+    return function() { return fn.apply(selfObj, arguments); };
   }
 };
 
@@ -1918,10 +1922,11 @@ goog.mixin = function(target, source) {
  *     between midnight, January 1, 1970 and the current time.
  */
 goog.now = (goog.TRUSTED_SITE && Date.now) || (function() {
-  // Unary plus operator converts its operand to a number which in the case of
-  // a date is done by calling getTime().
-  return +new Date();
-});
+             // Unary plus operator converts its operand to a number which in
+             // the case of
+             // a date is done by calling getTime().
+             return +new Date();
+           });
 
 
 /**
@@ -1955,8 +1960,8 @@ goog.globalEval = function(script) {
     } else {
       /** @type {Document} */
       var doc = goog.global.document;
-      var scriptElt = /** @type {!HTMLScriptElement} */ (
-          doc.createElement('SCRIPT'));
+      var scriptElt =
+          /** @type {!HTMLScriptElement} */ (doc.createElement('SCRIPT'));
       scriptElt.type = 'text/javascript';
       scriptElt.defer = false;
       // Note(user): can't use .innerHTML since "t('<test>')" will fail and
@@ -2048,12 +2053,10 @@ goog.getCssName = function(className, opt_modifier) {
 
   var rename;
   if (goog.cssNameMapping_) {
-    rename = goog.cssNameMappingStyle_ == 'BY_WHOLE' ?
-        getMapping : renameByParts;
+    rename =
+        goog.cssNameMappingStyle_ == 'BY_WHOLE' ? getMapping : renameByParts;
   } else {
-    rename = function(a) {
-      return a;
-    };
+    rename = function(a) { return a; };
   }
 
   if (opt_modifier) {
@@ -2127,6 +2130,10 @@ if (!COMPILED && goog.global.CLOSURE_CSS_NAME_MAPPING) {
  * var MSG_NAME = goog.getMsg('Hello {$placeholder}', {'placeholder': 'world'});
  * </code>
  *
+ * This function produces a string which should be treated as plain text. Use
+ * {@link goog.html.SafeHtmlFormatter} in conjunction with goog.getMsg to
+ * produce SafeHtml.
+ *
  * @param {string} str Translatable string, places holders in the form {$foo}.
  * @param {Object<string, string>=} opt_values Maps place holder name to value.
  * @return {string} message with placeholders filled.
@@ -2134,8 +2141,8 @@ if (!COMPILED && goog.global.CLOSURE_CSS_NAME_MAPPING) {
 goog.getMsg = function(str, opt_values) {
   if (opt_values) {
     str = str.replace(/\{\$([^}]+)}/g, function(match, key) {
-      return (opt_values != null && key in opt_values) ?
-          opt_values[key] : match;
+      return (opt_values != null && key in opt_values) ? opt_values[key] :
+                                                         match;
     });
   }
   return str;
@@ -2288,9 +2295,10 @@ goog.base = function(me, opt_methodName, var_args) {
   var caller = arguments.callee.caller;
 
   if (goog.STRICT_MODE_COMPATIBLE || (goog.DEBUG && !caller)) {
-    throw Error('arguments.caller not defined.  goog.base() cannot be used ' +
-                'with strict mode code. See ' +
-                'http://www.ecma-international.org/ecma-262/5.1/#sec-C');
+    throw Error(
+        'arguments.caller not defined.  goog.base() cannot be used ' +
+        'with strict mode code. See ' +
+        'http://www.ecma-international.org/ecma-262/5.1/#sec-C');
   }
 
   if (caller.superClass_) {
@@ -2311,8 +2319,8 @@ goog.base = function(me, opt_methodName, var_args) {
     args[i - 2] = arguments[i];
   }
   var foundCaller = false;
-  for (var ctor = me.constructor;
-       ctor; ctor = ctor.superClass_ && ctor.superClass_.constructor) {
+  for (var ctor = me.constructor; ctor;
+       ctor = ctor.superClass_ && ctor.superClass_.constructor) {
     if (ctor.prototype[opt_methodName] === caller) {
       foundCaller = true;
     } else if (foundCaller) {
@@ -2346,6 +2354,9 @@ goog.base = function(me, opt_methodName, var_args) {
  *     (e.g. "var Timer = goog.Timer").
  */
 goog.scope = function(fn) {
+  if (goog.isInModuleLoader_()) {
+    throw Error('goog.scope is not supported within a goog.module.');
+  }
   fn.call(goog.global);
 };
 
@@ -2435,8 +2446,11 @@ goog.defineClass.ClassDescriptor;
 
 
 /**
- * @define {boolean} Whether the instances returned by
- * goog.defineClass should be sealed when possible.
+ * @define {boolean} Whether the instances returned by goog.defineClass should
+ *     be sealed when possible.
+ *
+ * When sealing is disabled the constructor function will not be wrapped by
+ * goog.defineClass, making it incompatible with ES6 class methods.
  */
 goog.define('goog.defineClass.SEAL_CLASS_INSTANCES', goog.DEBUG);
 
@@ -2452,30 +2466,46 @@ goog.define('goog.defineClass.SEAL_CLASS_INSTANCES', goog.DEBUG);
  * @private
  */
 goog.defineClass.createSealingConstructor_ = function(ctr, superClass) {
-  if (goog.defineClass.SEAL_CLASS_INSTANCES &&
-      Object.seal instanceof Function) {
-    // Don't seal subclasses of unsealable-tagged legacy classes.
-    if (superClass && superClass.prototype &&
-        superClass.prototype[goog.UNSEALABLE_CONSTRUCTOR_PROPERTY_]) {
-      return ctr;
-    }
-    /**
-     * @this {Object}
-     * @return {?}
-     */
-    var wrappedCtr = function() {
-      // Don't seal an instance of a subclass when it calls the constructor of
-      // its super class as there is most likely still setup to do.
-      var instance = ctr.apply(this, arguments) || this;
-      instance[goog.UID_PROPERTY_] = instance[goog.UID_PROPERTY_];
-      if (this.constructor === wrappedCtr) {
-        Object.seal(instance);
-      }
-      return instance;
-    };
-    return wrappedCtr;
+  if (!goog.defineClass.SEAL_CLASS_INSTANCES) {
+    // Do now wrap the constructor when sealing is disabled. Angular code
+    // depends on this for injection to work properly.
+    return ctr;
   }
-  return ctr;
+
+  // Compute whether the constructor is sealable at definition time, rather
+  // than when the instance is being constructed.
+  var superclassSealable = !goog.defineClass.isUnsealable_(superClass);
+
+  /**
+   * @this {Object}
+   * @return {?}
+   */
+  var wrappedCtr = function() {
+    // Don't seal an instance of a subclass when it calls the constructor of
+    // its super class as there is most likely still setup to do.
+    var instance = ctr.apply(this, arguments) || this;
+    instance[goog.UID_PROPERTY_] = instance[goog.UID_PROPERTY_];
+
+    if (this.constructor === wrappedCtr && superclassSealable &&
+        Object.seal instanceof Function) {
+      Object.seal(instance);
+    }
+    return instance;
+  };
+
+  return wrappedCtr;
+};
+
+
+/**
+ * @param {Function} ctr The constructor to test.
+ * @returns {boolean} Whether the constructor has been tagged as unsealable
+ *     using goog.tagUnsealableClass.
+ * @private
+ */
+goog.defineClass.isUnsealable_ = function(ctr) {
+  return ctr && ctr.prototype &&
+      ctr.prototype[goog.UNSEALABLE_CONSTRUCTOR_PROPERTY_];
 };
 
 
@@ -2487,13 +2517,8 @@ goog.defineClass.createSealingConstructor_ = function(ctr, superClass) {
  * @const
  */
 goog.defineClass.OBJECT_PROTOTYPE_FIELDS_ = [
-  'constructor',
-  'hasOwnProperty',
-  'isPrototypeOf',
-  'propertyIsEnumerable',
-  'toLocaleString',
-  'toString',
-  'valueOf'
+  'constructor', 'hasOwnProperty', 'isPrototypeOf', 'propertyIsEnumerable',
+  'toLocaleString', 'toString', 'valueOf'
 ];
 
 
@@ -2529,7 +2554,7 @@ goog.defineClass.applyProperties_ = function(target, source) {
 
 /**
  * Sealing classes breaks the older idiom of assigning properties on the
- * prototype rather than in the constructor.  As such, goog.defineClass
+ * prototype rather than in the constructor. As such, goog.defineClass
  * must not seal subclasses of these old-style classes until they are fixed.
  * Until then, this marks a class as "broken", instructing defineClass
  * not to seal subclasses.

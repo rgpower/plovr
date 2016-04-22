@@ -45,13 +45,13 @@ package com.google.template.soy.soyparse;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.template.soy.base.SourceLocation;
-import com.google.template.soy.base.SoySyntaxException;
+import com.google.template.soy.base.internal.LegacyInternalSyntaxException;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.base.internal.SoyFileKind;
 import com.google.template.soy.base.internal.SoyFileSupplier.Version;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.ErrorReporter.Checkpoint;
-import com.google.template.soy.error.SoyError;
+import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.NameAttributePair;
 import com.google.template.soy.soytree.AliasDeclaration;
@@ -151,7 +151,7 @@ public class SoyFileParser {
   private static final Pattern ERROR_MSG_LINE_NUM_PAT =
       Pattern.compile("(?<=line )\\d+(?=, column )");
 
-  private static final SoyError UNCATEGORIZED = SoyError.of("In file {0}, template {1}: {2}");
+  private static final SoyErrorKind UNCATEGORIZED = SoyErrorKind.of("In file {0}, template {1}: {2}");
 
 
   /** Type registry for resolving type names. */
@@ -206,7 +206,7 @@ public class SoyFileParser {
       soyFileNode = SoyFile();
     } catch (ParseException e) {
       ParseErrors.reportSoyFileParseException(errorReporter, filePath, e);
-    } catch (SoySyntaxException e) {
+    } catch (LegacyInternalSyntaxException e) {
       ParseErrors.report(errorReporter, filePath, e);
     } catch (TokenMgrError e) {
       // This is only thrown by TemplateParser (and ExpressionParser) SoyFileParser never throws this
@@ -609,7 +609,7 @@ private TemplateNode Template(SoyFileHeaderInfo soyFileHeaderInfo) :
           filePath,
           templateNodeBuilder.getTemplateNameForUserMsgs(),
           adjustedErrorMsg);
-    } catch (SoySyntaxException sse) {
+    } catch (LegacyInternalSyntaxException sse) {
       errorReporter.report(
           SourceLocation.UNKNOWN,
           UNCATEGORIZED,

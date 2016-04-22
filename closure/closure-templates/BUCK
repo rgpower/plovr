@@ -5,7 +5,10 @@ java_library(
     'javascript/soyutils_usegoog.js',
   ],
   resources_root = '.',
-  annotation_processors = ['com.google.auto.value.processor.AutoValueProcessor'],
+  annotation_processors = [
+    'com.google.auto.value.processor.AutoAnnotationProcessor',
+    'com.google.auto.value.processor.AutoValueProcessor',
+  ],
   annotation_processor_deps = [':auto-value'],
   deps = [
     ':aopalliance',
@@ -89,6 +92,9 @@ prebuilt_jar(
 prebuilt_jar(
   name = 'auto-value',
   binary_jar = 'java/lib/auto-value-1.0.jar',
+  visibility = [
+    'PUBLIC',
+  ],
 )
 
 prebuilt_jar(

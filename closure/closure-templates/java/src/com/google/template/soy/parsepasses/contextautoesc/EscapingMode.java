@@ -132,7 +132,8 @@ public enum EscapingMode {
    * Makes sure there URIs are trusted and not input variables. Currently used only for script
    * sources.
    */
-  FILTER_TRUSTED_RESOURCE_URI(false, ContentKind.TRUSTED_RESOURCE_URI),
+  // TODO(shwetakarwa): Change second argument when function is implemented.
+  FILTER_TRUSTED_RESOURCE_URI(false, null),
 
   /**
    * The explicit rejection of escaping.
@@ -154,7 +155,7 @@ public enum EscapingMode {
   public final boolean isHtmlEmbeddable;
 
   /** The kind of content produced by the escaping directive associated with this escaping mode. */
-  public final @Nullable ContentKind contentKind;
+  @Nullable public final ContentKind contentKind;
 
   /** Whether this directive is only for internal use by the contextual autoescaper. */
   public final boolean isInternalOnly;
@@ -175,7 +176,7 @@ public enum EscapingMode {
   /**
    * The escaping mode corresponding to the given directive or null.
    */
-  public static @Nullable EscapingMode fromDirective(String directiveName) {
+  @Nullable public static EscapingMode fromDirective(String directiveName) {
     return DIRECTIVE_TO_ESCAPING_MODE.get(directiveName);
   }
 

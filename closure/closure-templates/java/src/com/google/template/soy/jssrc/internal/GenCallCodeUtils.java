@@ -18,12 +18,12 @@ package com.google.template.soy.jssrc.internal;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.jssrc.internal.GenJsExprsVisitor.GenJsExprsVisitorFactory;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.JsExprUtils;
 import com.google.template.soy.jssrc.restricted.SoyJsSrcPrintDirective;
-import com.google.template.soy.shared.restricted.ApiCallScopeBindingAnnotations.IsUsingIjData;
 import com.google.template.soy.soytree.CallBasicNode;
 import com.google.template.soy.soytree.CallDelegateNode;
 import com.google.template.soy.soytree.CallNode;
@@ -45,9 +45,6 @@ public class GenCallCodeUtils {
   /** All registered JS print directives. */
   private final Map<String, SoyJsSrcPrintDirective> soyJsSrcDirectivesMap;
 
-  /** Whether any of the Soy code uses injected data. */
-  private final boolean isUsingIjData;
-
   /** Instance of JsExprTranslator to use. */
   private final JsExprTranslator jsExprTranslator;
 
@@ -58,7 +55,6 @@ public class GenCallCodeUtils {
   private final GenJsExprsVisitorFactory genJsExprsVisitorFactory;
 
   /**
-   * @param isUsingIjData Whether any of the Soy code uses injected data.
    * @param jsExprTranslator Instance of JsExprTranslator to use.
    * @param isComputableAsJsExprsVisitor The IsComputableAsJsExprsVisitor to be used.
    * @param genJsExprsVisitorFactory Factory for creating an instance of GenJsExprsVisitor.
@@ -67,10 +63,9 @@ public class GenCallCodeUtils {
   protected
   GenCallCodeUtils(
       Map<String, SoyJsSrcPrintDirective> soyJsSrcDirectivesMap,
-      @IsUsingIjData boolean isUsingIjData, JsExprTranslator jsExprTranslator,
+      JsExprTranslator jsExprTranslator,
       IsComputableAsJsExprsVisitor isComputableAsJsExprsVisitor,
       GenJsExprsVisitorFactory genJsExprsVisitorFactory) {
-    this.isUsingIjData = isUsingIjData;
     this.jsExprTranslator = jsExprTranslator;
     this.isComputableAsJsExprsVisitor = isComputableAsJsExprsVisitor;
     this.genJsExprsVisitorFactory = genJsExprsVisitorFactory;
@@ -120,9 +115,10 @@ public class GenCallCodeUtils {
   public JsExpr genCallExpr(
       CallNode callNode,
       Deque<Map<String, JsExpr>> localVarTranslations,
-      TemplateAliases templateAliases) {
+      TemplateAliases templateAliases,
+      ErrorReporter errorReporter) {
 
-    JsExpr objToPass = genObjToPass(callNode, localVarTranslations, templateAliases);
+    JsExpr objToPass = genObjToPass(callNode, localVarTranslations, templateAliases, errorReporter);
 
     // Build the JS expr text for the callee.
     String calleeExprText;
@@ -141,8 +137,13 @@ public class GenCallCodeUtils {
         variantJsExprText = "''";
       } else {
         // Case 2b: Delegate call with variant expression.
-        JsExpr variantJsExpr = jsExprTranslator.translateToJsExpr(
-            variantSoyExpr, variantSoyExpr.toSourceString(), localVarTranslations);
+        // TODO(lukes): the use of toSourceString() here is strange.  Remove it.
+        JsExpr variantJsExpr =
+            jsExprTranslator.translateToJsExpr(
+                variantSoyExpr,
+                variantSoyExpr.toSourceString(),
+                localVarTranslations,
+                errorReporter);
         variantJsExprText = variantJsExpr.getText();
       }
       calleeExprText =
@@ -152,8 +153,7 @@ public class GenCallCodeUtils {
     }
 
     // Generate the main call expression.
-    String ijParam = isUsingIjData ? ", null, opt_ijData" : "";
-    String callExprText = calleeExprText + "(" + objToPass.getText() + ijParam + ")";
+    String callExprText = calleeExprText + "(" + objToPass.getText() + ", null, opt_ijData)";
     JsExpr result = new JsExpr(callExprText, Integer.MAX_VALUE);
 
     // In strict mode, escaping directives may apply to the call site.
@@ -211,15 +211,17 @@ public class GenCallCodeUtils {
   public JsExpr genObjToPass(
       CallNode callNode,
       Deque<Map<String, JsExpr>> localVarTranslations,
-      TemplateAliases templateAliases) {
+      TemplateAliases templateAliases,
+      ErrorReporter errorReporter) {
 
     // ------ Generate the expression for the original data to pass ------
     JsExpr dataToPass;
     if (callNode.dataAttribute().isPassingAllData()) {
       dataToPass = new JsExpr("opt_data", Integer.MAX_VALUE);
     } else if (callNode.dataAttribute().isPassingData()) {
-      dataToPass = jsExprTranslator.translateToJsExpr(
-          callNode.dataAttribute().dataExpr(), null /* exprText */, localVarTranslations);
+      dataToPass =
+          jsExprTranslator.translateToJsExpr(
+              callNode.dataAttribute().dataExpr(), localVarTranslations, errorReporter);
     } else {
       dataToPass = new JsExpr("null", Integer.MAX_VALUE);
     }
@@ -247,16 +249,20 @@ public class GenCallCodeUtils {
 
       if (child instanceof CallParamValueNode) {
         CallParamValueNode cpvn = (CallParamValueNode) child;
-        JsExpr valueJsExpr = jsExprTranslator.translateToJsExpr(
-            cpvn.getValueExprUnion().getExpr(), cpvn.getValueExprText(), localVarTranslations);
+        JsExpr valueJsExpr =
+            jsExprTranslator.translateToJsExpr(
+                cpvn.getValueExprUnion(), localVarTranslations, errorReporter);
         paramsObjSb.append(valueJsExpr.getText());
 
       } else {
         CallParamContentNode cpcn = (CallParamContentNode) child;
         JsExpr valueJsExpr;
         if (isComputableAsJsExprsVisitor.exec(cpcn)) {
-          valueJsExpr = JsExprUtils.concatJsExprsForceString(
-              genJsExprsVisitorFactory.create(localVarTranslations, templateAliases).exec(cpcn));
+          valueJsExpr =
+              JsExprUtils.concatJsExprsForceString(
+                  genJsExprsVisitorFactory
+                      .create(localVarTranslations, templateAliases, errorReporter)
+                      .exec(cpcn));
         } else {
           // This is a param with content that cannot be represented as JS expressions, so we assume
           // that code has been generated to define the temporary variable 'param<n>'.

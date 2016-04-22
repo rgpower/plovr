@@ -3409,6 +3409,29 @@ public final class NewTypeInferenceES5OrLowerTest extends NewTypeInferenceTestBa
         "function f(x, y) {",
         "  if (y instanceof x) {}",
         "}"));
+
+    typeCheck(LINE_JOINER.join(
+        "/**",
+        " * @param {*} value",
+        " * @param {function(new: T, ...)} type",
+        " * @template T",
+        " */",
+        "function assertInstanceof(value, type) {}",
+        "/** @const */ var ctor = unresolvedGlobalVar;",
+        "function f(obj) {",
+        "  if (obj instanceof ctor) {",
+        "    return assertInstanceof(obj, ctor);",
+        "  }",
+        "}"),
+        GlobalTypeInfo.COULD_NOT_INFER_CONST_TYPE);
+
+    typeCheck(LINE_JOINER.join(
+        "function f(x, y) {",
+        "  x(123);",
+        "  if (y instanceof x) {",
+        "    return y;",
+        "  }",
+        "}"));
   }
 
   public void testFunctionsExtendFunction() {
@@ -9003,23 +9026,6 @@ public final class NewTypeInferenceES5OrLowerTest extends NewTypeInferenceTestBa
         "};"));
   }
 
-  public void testUnificationWithTopFunctionDoesntCrash() {
-    typeCheck(LINE_JOINER.join(
-        "/**",
-        " * @param {*} value",
-        " * @param {function(new: T, ...)} type",
-        " * @template T",
-        " */",
-        "function assertInstanceof(value, type) {}",
-        "/** @const */ var ctor = unresolvedGlobalVar;",
-        "function f(obj) {",
-        "  if (obj instanceof ctor) {",
-        "    return assertInstanceof(obj, ctor);",
-        "  }",
-        "}"),
-        GlobalTypeInfo.COULD_NOT_INFER_CONST_TYPE);
-  }
-
   public void testGetpropOnPossiblyInexistentPropertyDoesntCrash() {
     typeCheck(LINE_JOINER.join(
         "/** @constructor */ function Foo(){};",
@@ -11823,6 +11829,16 @@ public final class NewTypeInferenceES5OrLowerTest extends NewTypeInferenceTestBa
         "  innerFun(function(str) { str - 5; });",
         "});"),
         NewTypeInference.INVALID_OPERAND_TYPE);
+
+    typeCheck(LINE_JOINER.join(
+        "/**",
+        " * @template T",
+        " * @param {function(T)} x",
+        " */",
+        "function f(x) {}",
+        "/** @const */",
+        "var g = f;",
+        "g(function(x) { return x - 1; });"));
   }
 
   public void testNamespacesWithNonEmptyObjectLiteral() {
@@ -15121,7 +15137,6 @@ public final class NewTypeInferenceES5OrLowerTest extends NewTypeInferenceTestBa
         "function f(x) { x - 5; }",
         "function g(x) { x.match(/asdf/); return x.match; }",
         "var /** function(number) */ tmp = g({match: f});"),
-        NewTypeInference.INVALID_ARGUMENT_TYPE,
         NewTypeInference.MISTYPED_ASSIGN_RHS);
   }
 
@@ -16258,5 +16273,174 @@ public final class NewTypeInferenceES5OrLowerTest extends NewTypeInferenceTestBa
         "function f(x, y) {}",
         "f(ns, ns2);"),
         NewTypeInference.NOT_UNIQUE_INSTANTIATION);
+  }
+
+  public void testSpecializeNamespaceProperties() {
+    typeCheck(LINE_JOINER.join(
+        "/** @const */",
+        "var ns = {};",
+        "/** @type {?number} */",
+        "ns.prop = null;",
+        "function f() {",
+        "  if (ns.prop !== null) {",
+        "    return ns.prop - 5;",
+        "  }",
+        "}"));
+
+    typeCheck(LINE_JOINER.join(
+        "/** @const */",
+        "var ns = {};",
+        "/** @type {?number} */",
+        "ns.prop = null;",
+        "/** @return {number} */",
+        "function f() {",
+        "  if (ns.prop === null) {",
+        "    return 123;",
+        "  }",
+        "  return ns.prop;",
+        "}"));
+
+    typeCheckCustomExterns(
+        LINE_JOINER.join(
+            DEFAULT_EXTERNS,
+            "/** @type {?number} */",
+            "window.prop;"),
+        LINE_JOINER.join(
+            "function f() {",
+            "  if (window.prop !== null) {",
+            "    return window.prop - 5;",
+            "  }",
+            "}"));
+
+    typeCheck(LINE_JOINER.join(
+        "/** @constructor */",
+        "function Foo() {};",
+        "/** @type {?number} */",
+        "Foo.prop = null;",
+        "function f() {",
+        "  if (Foo.prop !== null) {",
+        "    return Foo.prop - 5;",
+        "  }",
+        "}"));
+
+    typeCheck(LINE_JOINER.join(
+        "/** @const */",
+        "var ns = {};",
+        "/** @constructor */",
+        "ns.Foo = function() {};",
+        "/** @type {?number} */",
+        "ns.Foo.prop = null;",
+        "function f() {",
+        "  if (ns.Foo.prop !== null) {",
+        "    return ns.Foo.prop - 5;",
+        "  }",
+        "}"));
+
+    typeCheck(LINE_JOINER.join(
+        "function f() {};",
+        "/** @type {?number} */",
+        "f.prop = null;",
+        "function f() {",
+        "  if (f.prop !== null) {",
+        "    return f.prop - 5;",
+        "  }",
+        "}"));
+
+    typeCheck(LINE_JOINER.join(
+        "/** @const */",
+        "var ns = {};",
+        "/** @type {?Object|undefined} */",
+        "ns.mutableProp = null;",
+        "function f() {",
+        "  if (ns.mutableProp != null) {",
+        "    var /** !Object */ x = ns.mutableProp;",
+        "  }",
+        "}"));
+  }
+
+  public void testInferScalarInsteadOfLooseObject() {
+    typeCheck(LINE_JOINER.join(
+        "function h(x) {",
+        "  return x.name.toLowerCase().startsWith('a');",
+        "}",
+        "h({name: 'asdf'});"));
+
+    typeCheck(LINE_JOINER.join(
+        "function h(x) {",
+        "  return x.name.toLowerCase().startsWith('a');",
+        "}",
+        "h({name: {}});"),
+        NewTypeInference.INVALID_ARGUMENT_TYPE);
+
+    typeCheck(LINE_JOINER.join(
+        "function h(x) {",
+        "  return x.name.toString();",
+        "}",
+        "h({name: 'asdf'});",
+        "h({name: {}});"));
+
+    typeCheck(LINE_JOINER.join(
+        "function h(x) {",
+        "  return x.name.length;",
+        "}",
+        "h({name: 'asdf'});",
+        "h({name: {}});"));
+
+    typeCheck(LINE_JOINER.join(
+        "function h(x) {",
+        "  return x.num.toExponential();",
+        "}",
+        "h({num: 123});"));
+
+    typeCheck(LINE_JOINER.join(
+        "function h(x) {",
+        "  return x.num.toExponential();",
+        "}",
+        "h({num: {}});"),
+        NewTypeInference.INVALID_ARGUMENT_TYPE);
+
+    typeCheck(LINE_JOINER.join(
+        "/** @constructor */ function Foo() {}",
+        "Foo.prototype.toLowerCase = function() {};",
+        "Foo.prototype.getProp = function() {};",
+        "var foo = new Foo;",
+        "foo.f = function() {",
+        "  if (foo.toLowerCase() > 'asdf') { throw new Error; }",
+        "  foo.getProp();",
+        "};"),
+        NewTypeInference.INEXISTENT_PROPERTY,
+        // spurious b/c foo is inferred as string in the inner scope
+        NewTypeInference.CROSS_SCOPE_GOTCHA);
+  }
+
+  public void testFixCrashWhenUnannotatedPrototypeMethod() {
+    typeCheck(LINE_JOINER.join(
+        "var a = {};",
+        "a.prototype.b = function() {",
+        "  this.c = function() {};",
+        "};"),
+        NewTypeInference.INEXISTENT_PROPERTY,
+        NewTypeInference.GLOBAL_THIS);
+  }
+
+  public void testSimpleInferPrototypeProperties() {
+    typeCheck(LINE_JOINER.join(
+        "/** @const */ var ns = {};",
+        "/** @const */ ns.prop = Object.prototype.hasOwnProperty;"));
+
+    typeCheck(LINE_JOINER.join(
+        "/** @const */ var ns = {};",
+        "/** @const */ ns.prop = Foobar.prototype.randomProp;"),
+        GlobalTypeInfo.COULD_NOT_INFER_CONST_TYPE);
+
+    typeCheck(LINE_JOINER.join(
+        "/** @constructor */",
+        "function Foo() {}",
+        "Foo.prototype.method = function(x, y) { return x + y + 1 };",
+        "/** @const */",
+        "var ns = {};",
+        "/** @const */",
+        "ns.prop = Foo.prototype.method;"),
+        GlobalTypeInfo.COULD_NOT_INFER_CONST_TYPE);
   }
 }

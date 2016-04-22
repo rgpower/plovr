@@ -28,7 +28,6 @@ import com.google.debugging.sourcemap.proto.Mapping.OriginalMapping;
 import com.google.javascript.jscomp.CompilerOptions.DevMode;
 import com.google.javascript.jscomp.ReferenceCollectingCallback.ReferenceCollection;
 import com.google.javascript.jscomp.TypeValidator.TypeMismatch;
-import com.google.javascript.jscomp.deps.SortedDependencies.CircularDependencyException;
 import com.google.javascript.jscomp.deps.SortedDependencies.MissingProvideException;
 import com.google.javascript.jscomp.parsing.Config;
 import com.google.javascript.jscomp.parsing.ParserRunner;
@@ -466,7 +465,7 @@ public class Compiler extends AbstractCompiler {
 
   private static final DiagnosticType EMPTY_ROOT_MODULE_ERROR =
       DiagnosticType.error("JSC_EMPTY_ROOT_MODULE_ERROR",
-          "Root module '{0}' must contain at least one source code input");
+          "Root module ''{0}'' must contain at least one source code input");
 
   /**
    * Verifies that at least one module has been provided and that the first one
@@ -670,6 +669,10 @@ public class Compiler extends AbstractCompiler {
     compilerExecutor.setTimeout(timeout);
   }
 
+  /**
+   * The primary purpose of this method is to run the provided code with a larger than standard
+   * stack.
+   */
   <T> T runInCompilerThread(Callable<T> callable) {
     return compilerExecutor.runInCompilerThread(callable, options != null && options.tracer.isOn());
   }
@@ -687,6 +690,11 @@ public class Compiler extends AbstractCompiler {
 
     if (!precheck()) {
       return;
+    }
+
+    if (options.skipNonTranspilationPasses) {
+      // i.e. whitespace-only mode, which will not work with goog.module without:
+      whitespaceOnlyPasses();
     }
 
     if (!options.skipNonTranspilationPasses || options.lowerFromEs6()) {
@@ -758,6 +766,17 @@ public class Compiler extends AbstractCompiler {
    */
   boolean precheck() {
     return true;
+  }
+
+  public void whitespaceOnlyPasses() {
+    Tracer t = newTracer("runWhitespaceOnlyPasses");
+    try {
+      for (PassFactory pf : getPassConfig().getWhitespaceOnlyPasses()) {
+        pf.create(this).process(externsRoot, jsRoot);
+      }
+    } finally {
+      stopTracer(t, "runWhitespaceOnlyPasses");
+    }
   }
 
   public void check() {
@@ -1343,6 +1362,39 @@ public class Compiler extends AbstractCompiler {
         processAMDAndCommonJSModules();
       }
 
+      if (options.lowerFromEs6()
+          || options.transformAMDToCJSModules
+          || options.processCommonJSModules) {
+
+        // Build a map of module identifiers for any input which provides no namespace.
+        // These files could be imported modules which have no exports, but do have side effects.
+        Map<String, CompilerInput> inputModuleIdentifiers = new HashMap<>();
+        for (CompilerInput input : inputs) {
+          if (input.getKnownProvides().isEmpty()) {
+            ModuleIdentifier modInfo =
+                ModuleIdentifier.forFile(input.getSourceFile().getOriginalPath());
+
+            inputModuleIdentifiers.put(modInfo.getClosureNamespace(), input);
+          }
+        }
+
+        // Find out if any input attempted to import a module that had no exports.
+        // In this case we must force module rewriting to occur on the imported file
+        Map<String, CompilerInput> inputsToRewrite = new HashMap<>();
+        for (CompilerInput input : inputs) {
+          for (String require : input.getKnownRequires()) {
+            if (inputModuleIdentifiers.containsKey(require)
+                && !inputsToRewrite.containsKey(require)) {
+              inputsToRewrite.put(require, inputModuleIdentifiers.get(require));
+            }
+          }
+        }
+
+        if (!inputsToRewrite.isEmpty()) {
+          processEs6Modules(new ArrayList<>(inputsToRewrite.values()), true);
+        }
+      }
+
       orderInputs();
 
       // If in IDE mode, we ignore the error and keep going.
@@ -1393,6 +1445,21 @@ public class Compiler extends AbstractCompiler {
     }
   }
 
+  void orderInputsWithLargeStack() {
+    runInCompilerThread(new Callable<Void>() {
+      @Override
+      public Void call() throws Exception {
+        Tracer tracer = newTracer("orderInputsWithLargeStack");
+        try {
+          orderInputs();
+        } finally {
+          stopTracer(tracer, "orderInputsWithLargeStack");
+        }
+        return null;
+      }
+    });
+  }
+
   void orderInputs() {
     hoistExterns();
 
@@ -1412,9 +1479,6 @@ public class Compiler extends AbstractCompiler {
             (moduleGraph == null ? new JSModuleGraph(modules) : moduleGraph)
             .manageDependencies(options.dependencyOptions, inputs);
         staleInputs = true;
-      } catch (CircularDependencyException e) {
-        report(JSError.make(
-            JSModule.CIRCULAR_DEPENDENCY_ERROR, e.getMessage()));
       } catch (MissingProvideException e) {
         report(JSError.make(
             MISSING_ENTRY_ERROR, e.getMessage()));
@@ -1503,14 +1567,18 @@ public class Compiler extends AbstractCompiler {
   }
 
   void processEs6Modules() {
+    processEs6Modules(inputs, false);
+  }
+
+  void processEs6Modules(List<CompilerInput> inputsToProcess, boolean forceRewrite) {
     ES6ModuleLoader loader = new ES6ModuleLoader(options.moduleRoots, inputs);
-    for (CompilerInput input : inputs) {
+    for (CompilerInput input : inputsToProcess) {
       input.setCompiler(this);
       Node root = input.getAstRoot(this);
       if (root == null) {
         continue;
       }
-      new ProcessEs6Modules(this, loader, true).processFile(root);
+      new ProcessEs6Modules(this, loader, true).processFile(root, forceRewrite);
     }
   }
 
@@ -1598,6 +1666,7 @@ public class Compiler extends AbstractCompiler {
   /**
    * Converts the main parse tree back to JS code.
    */
+  @Override
   public String toSource() {
     return runInCompilerThread(new Callable<String>() {
       @Override

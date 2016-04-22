@@ -117,6 +117,7 @@ public final class SoyMsgExtractor {
    * @throws SoySyntaxException If a syntax error is detected.
    */
   public static void main(String... args) throws IOException {
+    // TODO(lukes): why isn't this using MainClassUtils.run?
     (new SoyMsgExtractor()).execMain(args);
   }
 
@@ -135,7 +136,7 @@ public final class SoyMsgExtractor {
       }
     };
 
-    Injector injector = MainClassUtils.createInjector(messagePluginModule, null);
+    Injector injector = MainClassUtils.createInjectorForMsgPlugin(messagePluginModule);
 
     SoyFileSet.Builder sfsBuilder = injector.getInstance(SoyFileSet.Builder.class);
     MainClassUtils.addSoyFilesToBuilder(sfsBuilder, inputPrefix, srcs, arguments,

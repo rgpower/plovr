@@ -325,7 +325,9 @@ class InlineFunctions implements CompilerPass {
           // TODO(johnlenz): this can be improved by looking at the possible
           // values for locals.  If there are simple values, or constants
           // we could still inline.
-          if (!assumeMinimumCapture && hasLocalNames(fnNode)) {
+          if (!assumeMinimumCapture
+              && hasLocalNames(fnNode)
+              && !NodeUtil.isIIFE(fnNode)) {
             fs.setInline(false);
           }
         }
@@ -585,7 +587,7 @@ class InlineFunctions implements CompilerPass {
       if (parent.isNew()) {
         Node target = parent.getFirstChild();
         if (target.isName() && target.getString().equals(
-            ObjectPropertyStringPreprocess.EXTERN_OBJECT_PROPERTY_STRING)) {
+            SimpleDefinitionFinder.EXTERN_OBJECT_PROPERTY_STRING)) {
           // This method is going to be replaced so don't inline it anywhere.
           fs.setInline(false);
         }

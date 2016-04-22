@@ -183,7 +183,7 @@ public final class HtmlTransformVisitorTest extends TestCase {
             + "{@param foo : ?}\n"
             + "{let $content kind=\"html\"}\n"
             + "  <div>\n"
-            + "    {if $foo}Hello world{/if}"
+            + "    {if $foo}Hello world{/if}\n"
             + "    {if $foo}\n"
             + "      <div>Hello world</div>\n"
             + "    {/if}\n"
@@ -195,26 +195,6 @@ public final class HtmlTransformVisitorTest extends TestCase {
     assertThat(((HtmlTextNode) getNode(n, 0, 2, 0, 0)).getRawText()).isEqualTo("Hello world");
     assertThat(((IfCondNode) getNode(n, 0, 3, 0)).getCommandText()).isEqualTo("$foo");
     assertThat(((HtmlOpenTagStartNode) getNode(n, 0, 3, 0, 0)).getTagName()).isEqualTo("div");
-  }
-
-  public void testCallInAttributesDeclaration() {
-    String templateBody = "<div id=\"foo\" {call .someTemplate /}></div>";
-
-    FormattingErrorReporter fer = new FormattingErrorReporter();
-    performVisitor(templateBody, fer);
-
-    assertThat(fer.getErrorMessages()).containsExactly("The incremental HTML Soy backend does not "
-        + "support template calls within HTML tag declarations.");
-  }
-
-  public void testIfInAttributeName() {
-    String templateBody = "{@param foo : ?}\n<div go{if $foo}oooo{/if}ogle=\"foo\"></div>";
-
-    FormattingErrorReporter fer = new FormattingErrorReporter();
-    performVisitor(templateBody, fer);
-
-    assertThat(fer.getErrorMessages()).containsExactly("Soy statements are not allowed in an "
-        + "attribute name declaration.");
   }
 
   public void testIfBeforeQuotedValue() {

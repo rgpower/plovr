@@ -1508,6 +1508,12 @@ soy.$$filterNormalizeUri = function(value) {
     goog.asserts.assert(value.constructor === soydata.SanitizedUri);
     return soy.$$normalizeUri(value);
   }
+  if (soydata.isContentKind(value,
+      soydata.SanitizedContentKind.TRUSTED_RESOURCE_URI)) {
+    goog.asserts.assert(
+        value.constructor === soydata.SanitizedTrustedResourceUri);
+    return soy.$$normalizeUri(value);
+  }
   if (value instanceof goog.html.SafeUrl) {
     return soy.$$normalizeUri(goog.html.SafeUrl.unwrap(value));
   }
@@ -1527,8 +1533,16 @@ soy.$$filterNormalizeUri = function(value) {
  */
 soy.$$filterNormalizeMediaUri = function(value) {
   // Image URIs are filtered strictly more loosely than other types of URIs.
+  // TODO(shwetakarwa): Add tests for this in soyutils_test_helper while adding
+  // tests for filterTrustedResourceUri.
   if (soydata.isContentKind(value, soydata.SanitizedContentKind.URI)) {
     goog.asserts.assert(value.constructor === soydata.SanitizedUri);
+    return soy.$$normalizeUri(value);
+  }
+  if (soydata.isContentKind(value,
+      soydata.SanitizedContentKind.TRUSTED_RESOURCE_URI)) {
+    goog.asserts.assert(
+        value.constructor === soydata.SanitizedTrustedResourceUri);
     return soy.$$normalizeUri(value);
   }
   if (value instanceof goog.html.SafeUrl) {
@@ -1542,17 +1556,36 @@ soy.$$filterNormalizeMediaUri = function(value) {
 
 
 /**
- * Vets a URI for usage as a resource.
+ * Vets a URI for usage as a resource. Makes sure the input value is a compile
+ * time constant or a TrustedResouce not in attacker's control.
  *
- * @param {*} value The value to filter. Might not be a string, but the value
- *     will be coerced to a string.
- * @return {*} current just the value.
+ * @param {*} value The value to filter.
+ * @return {string} The value content.
  */
 soy.$$filterTrustedResourceUri = function(value) {
-  // Makes sure this is a compile time constant or a TrustedResouce not in
-  // attacker's control.
-  // TODO(shwetakarwa): This needs to be changed once all the legacy URLs are
-  // taken care of.
+  if (soydata.isContentKind(value,
+      soydata.SanitizedContentKind.TRUSTED_RESOURCE_URI)) {
+    goog.asserts.assert(
+        value.constructor === soydata.SanitizedTrustedResourceUri);
+    return value.getContent();
+  }
+  if (value instanceof goog.html.TrustedResourceUrl) {
+    return goog.html.TrustedResourceUrl.unwrap(value);
+  }
+  goog.asserts.fail('Bad value `%s` for |filterTrustedResourceUri',
+      [String(value)]);
+  return 'about:invalid#zSoyz';
+};
+
+
+/**
+ * For any resource string/variable which has
+ * |blessStringAsTrustedResuorceUrlForLegacy directive return the value as is.
+ *
+ * @param {*} value The value to be blessed. Might not be a string
+ * @return {*} value Return current value.
+ */
+soy.$$blessStringAsTrustedResourceUrlForLegacy = function(value) {
   return value;
 };
 
@@ -2257,7 +2290,7 @@ soy.esc.$$MATCHER_FOR_NORMALIZE_URI__AND__FILTER_NORMALIZE_URI__AND__FILTER_NORM
  * A pattern that vets values produced by the named directives.
  * @private {!RegExp}
  */
-soy.esc.$$FILTER_FOR_FILTER_CSS_VALUE_ = /^(?!-*(?:expression|(?:moz-)?binding))(?:[.#]?-?(?:[_a-z0-9-]+)(?:-[_a-z0-9-]+)*-?|-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[a-z]{1,2}|%)?|!important|)$/i;
+soy.esc.$$FILTER_FOR_FILTER_CSS_VALUE_ = /^(?!-*(?:expression|(?:moz-)?binding))(?:[.#]?-?(?:[_a-z0-9-]+)(?:-[_a-z0-9-]+)*-?|(?:rgb|hsl)a?\([0-9.%,\u0020]+\)|-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[a-z]{1,2}|%)?|!important|)$/i;
 
 /**
  * A pattern that vets values produced by the named directives.

@@ -1115,7 +1115,10 @@ final class NewTypeInference implements CompilerPass {
     if (currentScope.isLocalFunDef(varName)) {
       return inEnv;
     }
-    if (NodeUtil.isNamespaceDecl(nameNode)) {
+    if (NodeUtil.isNamespaceDecl(nameNode)
+        || nameNode.getParent().getBooleanProp(Node.ANALYZED_DURING_GTI)) {
+      Preconditions.checkNotNull(declType,
+          "Can't skip var declaration with undeclared type at: %s", nameNode);
       maybeSetTypeI(nameNode, declType);
       return envPutType(inEnv, varName, declType);
     }
@@ -1382,20 +1385,6 @@ final class NewTypeInference implements CompilerPass {
       // For now, we don't warn for global variables
       return new EnvTypePair(inEnv, JSType.UNKNOWN);
     }
-
-    // For known functions, we want to use the summary type, if any.
-    // It is wrong to use the context to specialize the type;
-    // a function can correctly be used in two contexts whose types
-    // are incompatible.
-    // NOTE(dimvar): To stop specialization of known functions declared as
-    // properties, we end up stopping specialization of all namespace props.
-    // This reduces precision but it helps performance; namespaces have a lot of
-    // properties, so type operations on them are expensive.
-    if (currentScope.isKnownFunction(varName)
-        || maybeIsNamespace(varName, inferredType)) {
-      return new EnvTypePair(inEnv, inferredType);
-    }
-
     println(varName, "'s inferredType: ", inferredType,
         " requiredType:  ", requiredType,
         " specializedType:  ", specializedType);
@@ -1433,14 +1422,6 @@ final class NewTypeInference implements CompilerPass {
       preciseType = preciseType.withLoose();
     }
     return EnvTypePair.addBinding(inEnv, varName, preciseType);
-  }
-
-  // A heuristic to detect if a variable is a namespace during NTI.
-  // NOTE(dimvar): consider keeping around Namespace.java instances during NTI.
-  // (But if we keep them around, they need to be finalized during GTI.)
-  private boolean maybeIsNamespace(String varName, JSType inferredType) {
-    return currentScope.isConstVar(varName)
-        && inferredType.isSubtypeOf(JSType.TOP_OBJECT);
   }
 
   private EnvTypePair analyzeLogicalOpFwd(
@@ -1557,10 +1538,11 @@ final class NewTypeInference implements CompilerPass {
     ctorPair = analyzeExprFwd(ctor, objPair.env, commonTypes.topFunction());
     JSType ctorType = ctorPair.type;
     FunctionType ctorFunType = ctorType.getFunType();
-    if (!ctorType.isUnknown()
-        && (!ctorType.isSubtypeOf(commonTypes.topFunction())
-            || (!ctorFunType.isQmarkFunction()
-                && !ctorFunType.isSomeConstructorOrInterface()))) {
+    boolean mayBeConstructorFunction = ctorFunType != null
+        && (ctorFunType.isLoose()
+            || ctorFunType.isQmarkFunction()
+            || ctorFunType.isSomeConstructorOrInterface());
+    if (!(ctorType.isUnknown() || mayBeConstructorFunction)) {
       warnInvalidOperand(
           ctor, Token.INSTANCEOF, "a constructor function", ctorType);
     }
@@ -2122,9 +2104,10 @@ final class NewTypeInference implements CompilerPass {
 
     if ((comparisonOp == Token.SHEQ && specializedType.isTrueOrTruthy())
         || (comparisonOp == Token.SHNE && specializedType.isFalseOrFalsy())) {
-      JSType meetType = JSType.meet(lhsPair.type, rhsPair.type);
-      lhsPair = analyzeExprFwd(lhs, preciseEnv, JSType.UNKNOWN, meetType);
-      rhsPair = analyzeExprFwd(rhs, lhsPair.env, JSType.UNKNOWN, meetType);
+      lhsPair = analyzeExprFwd(lhs, preciseEnv,
+          JSType.UNKNOWN, lhsPair.type.specialize(rhsPair.type));
+      rhsPair = analyzeExprFwd(rhs, lhsPair.env,
+          JSType.UNKNOWN, rhsPair.type.specialize(lhsPair.type));
     } else if ((comparisonOp == Token.SHEQ && specializedType.isFalseOrFalsy()) ||
         (comparisonOp == Token.SHNE && specializedType.isTrueOrTruthy())) {
       JSType lhsType = lhsPair.type;
@@ -3146,10 +3129,6 @@ final class NewTypeInference implements CompilerPass {
         " requiredType:  ", requiredType);
     if (inferredType == null) {
       return new EnvTypePair(outEnv, JSType.UNKNOWN);
-    }
-    if (currentScope.isKnownFunction(varName)
-        || maybeIsNamespace(varName, inferredType)) {
-      return new EnvTypePair(outEnv, inferredType);
     }
     JSType preciseType = inferredType.specialize(requiredType);
     if ((currentScope.isUndeclaredFormal(varName)

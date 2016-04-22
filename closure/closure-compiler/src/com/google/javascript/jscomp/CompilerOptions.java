@@ -40,6 +40,8 @@ import java.util.Set;
  * @author nicksantos@google.com (Nick Santos)
  */
 public class CompilerOptions {
+  // The number of characters after which we insert a line break in the code
+  static final int DEFAULT_LINE_LENGTH_THRESHOLD = 500;
 
   /**
    * A common enum for compiler passes that can run either globally or locally.
@@ -188,29 +190,6 @@ public class CompilerOptions {
     reportMissingOverride = level;
   }
 
-  /**
-   * Deprecated. Use
-   * {@code setWarningLevel(DiagnosticGroups.MISSING_REQUIRE, CheckLevel.WARNING);}
-   * or
-   * {@code setWarningLevel(DiagnosticGroups.MISSING_REQUIRE, CheckLevel.ERROR);}
-   */
-  @Deprecated
-  public void setCheckRequires(CheckLevel level) {
-    setWarningLevel(DiagnosticGroups.MISSING_REQUIRE, level);
-  }
-
-  @Deprecated
-  public CheckLevel checkProvides;
-
-  /**
-   * Checks for missing goog.provides() calls.
-   * @deprecated Use setWarningLevel(DiagnosticGroups.MISSING_PROVIDE, level)
-   */
-  @Deprecated
-  public void setCheckProvides(CheckLevel level) {
-    setWarningLevel(DiagnosticGroups.MISSING_PROVIDE, level);
-  }
-
   public CheckLevel checkGlobalNamesLevel;
 
   /**
@@ -270,21 +249,40 @@ public class CompilerOptions {
   Set<String> extraAnnotationNames;
 
   /**
+   * Policies to determine the disposal checking level.
+   */
+  public enum DisposalCheckingPolicy {
+    /**
+     * Don't check any disposal.
+     */
+    OFF,
+
+    /**
+     * Default/conservative disposal checking.
+     */
+    ON,
+
+    /**
+     * Aggressive disposal checking.
+     */
+    AGGRESSIVE,
+  }
+
+  /**
    * Check for patterns that are known to cause memory leaks.
    */
-  CheckEventfulObjectDisposal.DisposalCheckingPolicy checkEventfulObjectDisposalPolicy;
+  DisposalCheckingPolicy checkEventfulObjectDisposalPolicy;
 
-  public void setCheckEventfulObjectDisposalPolicy(
-      CheckEventfulObjectDisposal.DisposalCheckingPolicy policy) {
+  public void setCheckEventfulObjectDisposalPolicy(DisposalCheckingPolicy policy) {
     this.checkEventfulObjectDisposalPolicy = policy;
 
     // The CheckEventfulObjectDisposal pass requires types so enable inferring types if
     // this pass is enabled.
-    if (policy != CheckEventfulObjectDisposal.DisposalCheckingPolicy.OFF) {
+    if (policy != DisposalCheckingPolicy.OFF) {
       this.inferTypes = true;
     }
   }
-  public CheckEventfulObjectDisposal.DisposalCheckingPolicy getCheckEventfulObjectDisposalPolicy() {
+  public DisposalCheckingPolicy getCheckEventfulObjectDisposalPolicy() {
     return checkEventfulObjectDisposalPolicy;
   }
 
@@ -365,7 +363,7 @@ public class CompilerOptions {
   public boolean crossModuleMethodMotion;
 
   /** Inlines trivial getters */
-  public boolean inlineGetters;
+  boolean inlineGetters;
 
   /** Inlines variables */
   public boolean inlineVariables;
@@ -871,7 +869,7 @@ public class CompilerOptions {
 
   int summaryDetailLevel = 1;
 
-  int lineLengthThreshold = CodePrinter.DEFAULT_LINE_LENGTH_THRESHOLD;
+  int lineLengthThreshold = DEFAULT_LINE_LENGTH_THRESHOLD;
 
   //--------------------------------
   // Special Output Options
@@ -967,6 +965,15 @@ public class CompilerOptions {
   private ImmutableList<ConformanceConfig> conformanceConfigs = ImmutableList.of();
 
   /**
+   * For use in {@value CompilationLevel#WHITESPACE_ONLY} mode, when using goog.module.
+   */
+  boolean wrapGoogModulesForWhitespaceOnly = true;
+
+  public void setWrapGoogModulesForWhitespaceOnly(boolean enable) {
+    this.wrapGoogModulesForWhitespaceOnly = enable;
+  }
+
+  /**
    * Initializes compiler options. All options are disabled by default.
    *
    * Command-line frontends to the compiler should set these properties
@@ -988,7 +995,6 @@ public class CompilerOptions {
     checkSuspiciousCode = false;
     checkTypes = false;
     reportMissingOverride = CheckLevel.OFF;
-    checkProvides = CheckLevel.OFF;
     checkGlobalNamesLevel = CheckLevel.OFF;
     brokenClosureRequiresLevel = CheckLevel.ERROR;
     checkGlobalThisLevel = CheckLevel.OFF;
@@ -997,7 +1003,7 @@ public class CompilerOptions {
     computeFunctionSideEffects = false;
     chainCalls = false;
     extraAnnotationNames = null;
-    checkEventfulObjectDisposalPolicy = CheckEventfulObjectDisposal.DisposalCheckingPolicy.OFF;
+    checkEventfulObjectDisposalPolicy = DisposalCheckingPolicy.OFF;
 
     // Optimizations
     foldConstants = false;
@@ -1350,19 +1356,13 @@ public class CompilerOptions {
    * Sets the id generators to replace.
    */
   public void setIdGenerators(Set<String> idGenerators) {
+    RenamingMap gen = new UniqueRenamingToken();
     ImmutableMap.Builder<String, RenamingMap> builder = ImmutableMap.builder();
     for (String name : idGenerators) {
-       builder.put(name, UNIQUE_ID_GENERATOR);
+       builder.put(name, gen);
     }
     this.idGenerators = builder.build();
   }
-
-  /**
-   * A renaming map instance to use to signal the use of the "inconsistent"
-   * id generator type.
-   */
-  public static final RenamingMap UNIQUE_ID_GENERATOR =
-      ReplaceIdGenerators.UNIQUE;
 
   /**
    * Sets the id generators to replace.
@@ -1547,7 +1547,6 @@ public class CompilerOptions {
    * This supersedes manageClosureDependencies.
    */
   public void setDependencyOptions(DependencyOptions options) {
-    options.setEs6ModuleOrder(this.languageIn.isEs6OrHigher());
     this.dependencyOptions = options;
   }
 
@@ -1656,9 +1655,7 @@ public class CompilerOptions {
    */
   public void setLanguageIn(LanguageMode languageIn) {
     Preconditions.checkState(languageIn != LanguageMode.NO_TRANSPILE);
-    Preconditions.checkNotNull(dependencyOptions);
     this.languageIn = languageIn;
-    dependencyOptions.setEs6ModuleOrder(languageIn.isEs6OrHigher());
   }
 
   public LanguageMode getLanguageIn() {
@@ -1934,10 +1931,6 @@ public class CompilerOptions {
     this.crossModuleMethodMotion = crossModuleMethodMotion;
   }
 
-  public void setInlineGetters(boolean inlineGetters) {
-    this.inlineGetters = inlineGetters;
-  }
-
   public void setInlineVariables(boolean inlineVariables) {
     this.inlineVariables = inlineVariables;
   }
@@ -1976,6 +1969,9 @@ public class CompilerOptions {
 
   public void setRemoveUnusedPrototypeProperties(boolean enabled) {
     this.removeUnusedPrototypeProperties = enabled;
+    // InlineSimpleMethods makes similar assumptions to
+    // RemoveUnusedPrototypeProperties, so they are enabled together.
+    this.inlineGetters = enabled;
   }
 
   public void setRemoveUnusedPrototypePropertiesInExterns(boolean enabled) {

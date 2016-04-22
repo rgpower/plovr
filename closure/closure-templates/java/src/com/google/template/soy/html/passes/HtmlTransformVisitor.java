@@ -23,7 +23,7 @@ import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
 import com.google.template.soy.error.ErrorReporter;
-import com.google.template.soy.error.SoyError;
+import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.html.HtmlAttributeNode;
 import com.google.template.soy.html.HtmlCloseTagNode;
 import com.google.template.soy.html.HtmlOpenTagEndNode;
@@ -74,32 +74,34 @@ import java.util.Set;
  * {@link XidNode}, are left alone.
  */
 public final class HtmlTransformVisitor extends AbstractSoyNodeVisitor<Void> {
-  private static final SoyError ENDING_STATE_MISMATCH = SoyError.of("Ending context of the content "
-      + "within a Soy tag must match the starting context. Transition was from {0} to {1}");
+  private static final SoyErrorKind ENDING_STATE_MISMATCH =
+      SoyErrorKind.of(
+          "Ending context of the content within a Soy tag must match the starting context. "
+              + "Transition was from {0} to {1}");
 
-  private static final SoyError EXPECTED_ATTRIBUTE_VALUE = SoyError.of("Expected to find a quoted "
-      + "attribute value, but found \"{0}\".");
+  private static final SoyErrorKind EXPECTED_ATTRIBUTE_VALUE =
+      SoyErrorKind.of("Expected to find a quoted " + "attribute value, but found \"{0}\".");
 
-  private static final SoyError SOY_TAG_IN_ATTR_NAME = SoyError.of("Soy statements are not allowed "
-      + "in an attribute name declaration.");
+  private static final SoyErrorKind SOY_TAG_BEFORE_ATTR_VALUE =
+      SoyErrorKind.of(
+          "Soy statements are not "
+              + "allowed before an attribute value. They should be moved inside a quotation mark.");
 
-  private static final SoyError SOY_TAG_BEFORE_ATTR_VALUE = SoyError.of("Soy statements are not "
-      + "allowed before an attribute value. They should be moved inside a quotation mark.");
+  private static final SoyErrorKind MISSING_TAG_NAME =
+      SoyErrorKind.of("Found a tag with an empty tag " + "name.");
 
-  private static final SoyError MISSING_TAG_NAME = SoyError.of("Found a tag with an empty tag "
-      + "name.");
+  private static final SoyErrorKind NON_STRICT_FILE =
+      SoyErrorKind.of("The incremental HTML Soy backend " + "requires strict autoescape mode");
 
-  private static final SoyError NON_STRICT_FILE = SoyError.of("The incremental HTML Soy backend "
-      + "requires strict autoescape mode");
+  private static final SoyErrorKind NON_STRICT_TEMPLATE =
+      SoyErrorKind.of(
+          "The incremental HTML Soy "
+              + "backend requires strict autoescape mode for all templates.");
 
-  private static final SoyError NON_STRICT_TEMPLATE = SoyError.of("The incremental HTML Soy "
-      + "backend requires strict autoescape mode for all templates.");
-
-  private static final SoyError TEMPLATE_CALL_IN_TAG = SoyError.of("The incremental HTML Soy "
-      + "backend does not support template calls within HTML tag declarations.");
-
-  private static final SoyError UNKNOWN_CONTENT_KIND = SoyError.of("The incremental HTML Soy "
-      + "backend requires all let statements and parameters with content to have a content kind");
+  private static final SoyErrorKind UNKNOWN_CONTENT_KIND =
+      SoyErrorKind.of(
+          "The incremental HTML Soy backend requires all let statements and parameters with "
+              + "content to have a content kind");
 
   /** The last {@link HtmlState} encountered. */
   private HtmlState currentState = HtmlState.PCDATA;
@@ -199,8 +201,7 @@ public final class HtmlTransformVisitor extends AbstractSoyNodeVisitor<Void> {
    * @param node The node that the mapped node comes from.
    */
   private void createTextNode(RawTextNode node) {
-    // Consume text, removing unnecessary whitespace
-    String currentString = consumeText(true);
+    String currentString = consumeText();
 
     if (currentString.length() > 0) {
       SourceLocation sl = deriveSourceLocation(node);
@@ -214,7 +215,7 @@ public final class HtmlTransformVisitor extends AbstractSoyNodeVisitor<Void> {
    * @param node The node that the mapped node comes from.
    */
   private void createAttributeValueNode(RawTextNode node) {
-    String currentString = consumeText(false);
+    String currentString = consumeText();
 
     // Check to see if the currentText is empty. This may occur when we have something like
     // disabled="" or disabled="{$foo}" after the print tag is finished.
@@ -258,15 +259,8 @@ public final class HtmlTransformVisitor extends AbstractSoyNodeVisitor<Void> {
     }
   }
 
-  private String consumeText(boolean trim) {
-    String token;
-
-    if (trim) {
-      token = CharMatcher.WHITESPACE.trimFrom(currentText);
-    } else {
-      token = currentText.toString();
-    }
-
+  private String consumeText() {
+    String token = currentText.toString();
     currentText.setLength(0);
     return token;
   }
@@ -278,7 +272,7 @@ public final class HtmlTransformVisitor extends AbstractSoyNodeVisitor<Void> {
    */
   private void handleHtmlTagName(RawTextNode node, char c) {
     if (CharMatcher.WHITESPACE.matches(c) || c == '>') {
-      currentTag = consumeText(false);
+      currentTag = consumeText();
 
       // No tag name, saw something like <> or <  >.
       if (currentTag.length() <= 0) {
@@ -345,19 +339,19 @@ public final class HtmlTransformVisitor extends AbstractSoyNodeVisitor<Void> {
   private void handleHtmlAttributeName(RawTextNode node, char c) {
     if (c == '=') {
       // Next thing we should see is " to start the attribute value.
-      currentAttributeName = consumeText(false);
+      currentAttributeName = consumeText();
       setState(HtmlState.BEFORE_ATTRIBUTE_VALUE);
       suppressExpectedAttributeValueError = false;
     } else if (c == '>') {
       // Tag ended with an attribute with no value (e.g. disabled) - create an attribute, then
       // handle the tag end.
-      currentAttributeName = consumeText(false);
+      currentAttributeName = consumeText();
       createAttribute(node);
       handleHtmlTag(node, c);
     } else if (CharMatcher.WHITESPACE.matches(c)) {
       // Handle a value-less attribute, then start looking for another attribute or the end of the
       // tag.
-      currentAttributeName = consumeText(false);
+      currentAttributeName = consumeText();
       createAttribute(node);
       setState(HtmlState.TAG);
     } else {
@@ -448,11 +442,6 @@ public final class HtmlTransformVisitor extends AbstractSoyNodeVisitor<Void> {
     // Mark all visited RawTextNodes for removal. A single RawTextNode may not map to any Html*Nodes
     // by itself, but we still want to remove it.
     visitedRawTextNodes.add(node);
-    
-    // Just skip empty nodes
-    if (CharMatcher.WHITESPACE.matchesAllOf(content)) {
-      return;
-    }
 
     for (int i = 0; i < content.length(); i += 1) {
       consumeCharacter(node, content.charAt(i));
@@ -468,6 +457,10 @@ public final class HtmlTransformVisitor extends AbstractSoyNodeVisitor<Void> {
         break;
       case PCDATA:
         createTextNode(node);
+        break;
+      case ATTRIBUTE_NAME:
+        // Value-less attribute inside a soy block, e.g. {if $condition}disabled{/if}
+        consumeCharacter(node, ' ');
         break;
       case ATTR_VALUE:
         /*
@@ -491,9 +484,6 @@ public final class HtmlTransformVisitor extends AbstractSoyNodeVisitor<Void> {
    */
   private void checkForValidSoyNodeLocation(SoyNode node) {
     switch(getState()) {
-      case ATTRIBUTE_NAME:
-        errorReporter.report(node.getSourceLocation(), SOY_TAG_IN_ATTR_NAME);
-        break;
       case BEFORE_ATTRIBUTE_VALUE:
         errorReporter.report(node.getSourceLocation(), SOY_TAG_BEFORE_ATTR_VALUE);
         break;
@@ -570,7 +560,7 @@ public final class HtmlTransformVisitor extends AbstractSoyNodeVisitor<Void> {
     } else if (node.getContentKind() == ContentKind.ATTRIBUTES) {
       HtmlState startState = getState();
       setState(HtmlState.TAG);
-      visitChildren(node);
+      visitChildrenAllowingConcurrentModification(node);
       setState(startState);
     }
   }
@@ -609,9 +599,15 @@ public final class HtmlTransformVisitor extends AbstractSoyNodeVisitor<Void> {
    * attributes and making sure that the autoescape mode is strict.
    */
   @Override protected void visitTemplateNode(TemplateNode node) {
-    if (node.getContentKind() != ContentKind.HTML
-        && node.getContentKind() != ContentKind.ATTRIBUTES) {
-      return;
+    switch (node.getContentKind()) {
+      case HTML:
+        currentState = HtmlState.PCDATA;
+        break;
+      case ATTRIBUTES:
+        currentState = HtmlState.TAG;
+        break;
+      default:
+        return; // only need to do transformations for HTML / attributes
     }
 
     if (node.getAutoescapeMode() != AutoescapeMode.STRICT) {
@@ -622,17 +618,11 @@ public final class HtmlTransformVisitor extends AbstractSoyNodeVisitor<Void> {
   }
 
   /**
-   * Visits a {@link CallNode} - makes sure that the node does not occur within an attribute state
-   * (e.g. after {@code <div} and before {@code >}).
+   * Visits a {@link CallNode} - makes sure that the node does not occur in an invalid location.
    */
   @Override protected void visitCallNode(CallNode node) {
     checkForValidSoyNodeLocation(node);
-
-    if (getState().isAttributeState()) {
-      errorReporter.report(node.getSourceLocation(), TEMPLATE_CALL_IN_TAG);
-    }
-
-    visitChildren(node);
+    visitSoyNode(node);
   }
 
   @Override protected void visitIfCondNode(IfCondNode node) {
@@ -658,9 +648,6 @@ public final class HtmlTransformVisitor extends AbstractSoyNodeVisitor<Void> {
 
   private void visitSoyNode(SoyNode node, boolean enforceState) {
     switch(getState()) {
-      case ATTRIBUTE_NAME:
-        errorReporter.report(node.getSourceLocation(), SOY_TAG_IN_ATTR_NAME);
-        break;
       case BEFORE_ATTRIBUTE_VALUE:
         errorReporter.report(node.getSourceLocation(), SOY_TAG_BEFORE_ATTR_VALUE);
         break;
@@ -685,7 +672,7 @@ public final class HtmlTransformVisitor extends AbstractSoyNodeVisitor<Void> {
                 startState, endState);
           }
 
-          consumeText(false);
+          consumeText();
         }
         break;
       default:

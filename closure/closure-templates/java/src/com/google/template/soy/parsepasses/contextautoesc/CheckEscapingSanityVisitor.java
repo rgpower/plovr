@@ -16,7 +16,7 @@
 
 package com.google.template.soy.parsepasses.contextautoesc;
 
-import com.google.common.collect.Iterables;
+import com.google.common.collect.ImmutableList;
 import com.google.template.soy.data.SanitizedContent;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.soytree.AbstractSoyNodeVisitor;
@@ -30,11 +30,9 @@ import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
 import com.google.template.soy.soytree.SoyNode.RenderUnitNode;
+import com.google.template.soy.soytree.TemplateDelegateNode;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
-import com.google.template.soy.soytree.TemplateRegistry.DelegateTemplateDivision;
-
-import java.util.Set;
 
 /**
  * Visitor performing escaping sanity checks over all input -- not just input affected by the
@@ -55,10 +53,14 @@ final class CheckEscapingSanityVisitor extends AbstractSoyNodeVisitor<Void> {
   private AutoescapeMode autoescapeMode;
 
   /** Registry of all templates in the Soy tree. */
-  private TemplateRegistry templateRegistry;
+  private final TemplateRegistry templateRegistry;
+  // TODO(user): replace the exceptions with invocations of the error reporter
+  @SuppressWarnings("unused")
   private final ErrorReporter errorReporter;
 
-  public CheckEscapingSanityVisitor(ErrorReporter errorReporter) {
+  public CheckEscapingSanityVisitor(
+      TemplateRegistry templateRegistry, ErrorReporter errorReporter) {
+    this.templateRegistry = templateRegistry;
     this.errorReporter = errorReporter;
   }
 
@@ -66,10 +68,7 @@ final class CheckEscapingSanityVisitor extends AbstractSoyNodeVisitor<Void> {
   // Implementations for specific nodes.
 
   @Override protected void visitSoyFileSetNode(SoyFileSetNode node) {
-    // Build templateRegistry.
-    templateRegistry = new TemplateRegistry(node, errorReporter);
     visitChildren(node);
-    templateRegistry = null;
   }
 
   @Override protected void visitTemplateNode(TemplateNode node) {
@@ -108,15 +107,15 @@ final class CheckEscapingSanityVisitor extends AbstractSoyNodeVisitor<Void> {
 
   @Override protected void visitCallDelegateNode(CallDelegateNode node) {
     if (autoescapeMode == AutoescapeMode.NONCONTEXTUAL) {
-      TemplateNode callee;
-      Set<DelegateTemplateDivision> divisions =
-          templateRegistry.getDelTemplateDivisionsForAllVariants((node).getDelCalleeName());
-      if (divisions != null && !divisions.isEmpty()) {
+      ImmutableList<TemplateDelegateNode> divisions =
+          templateRegistry
+              .getDelTemplateSelector()
+              .delTemplateNameToValues()
+              .get(node.getDelCalleeName());
+      if (!divisions.isEmpty()) {
         // As the callee is required only to know the kind of the content and as all templates in
         // delPackage are of the same kind it is sufficient to choose only the first template.
-        DelegateTemplateDivision division = Iterables.getFirst(divisions, null);
-        callee = Iterables.get(
-            division.delPackageNameToDelTemplateMap.values(), 0);
+        TemplateNode callee = divisions.get(0);
         if (callee.getContentKind() == SanitizedContent.ContentKind.TEXT) {
           throw SoyAutoescapeException.createWithNode(
               "Calls to strict templates with 'kind=\"text\"' attribute is not permitted in "
@@ -136,12 +135,6 @@ final class CheckEscapingSanityVisitor extends AbstractSoyNodeVisitor<Void> {
       RenderUnitNode node, String nodeName, String selfClosingExample) {
     final AutoescapeMode oldMode = autoescapeMode;
     if (node.getContentKind() != null) {
-      if (autoescapeMode == AutoescapeMode.NOAUTOESCAPE) {
-        throw SoyAutoescapeException.createWithNode(
-            "{" + nodeName + "} node with 'kind' attribute is not permitted in non-autoescaped "
-            + "templates: " + node.toSourceString(),
-            node);
-      }
       // Temporarily enter strict mode.
       autoescapeMode = AutoescapeMode.STRICT;
     } else if (autoescapeMode == AutoescapeMode.STRICT) {

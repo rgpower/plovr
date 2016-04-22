@@ -22,13 +22,13 @@ import com.google.common.collect.Maps;
 import com.google.inject.Inject;
 import com.google.template.soy.basetree.ParentNode;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
-import com.google.template.soy.error.ErrorReporter;
-import com.google.template.soy.error.SoyError;
+import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.html.HtmlAttributeNode;
 import com.google.template.soy.html.HtmlCloseTagNode;
+import com.google.template.soy.html.HtmlDefinitions;
 import com.google.template.soy.html.HtmlOpenTagEndNode;
 import com.google.template.soy.html.HtmlOpenTagNode;
 import com.google.template.soy.html.HtmlOpenTagStartNode;
@@ -45,6 +45,7 @@ import com.google.template.soy.jssrc.internal.JsExprTranslator;
 import com.google.template.soy.jssrc.internal.JsSrcUtils;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.shared.internal.CodeBuilder;
+import com.google.template.soy.soytree.CallBasicNode;
 import com.google.template.soy.soytree.CallNode;
 import com.google.template.soy.soytree.CallParamContentNode;
 import com.google.template.soy.soytree.CallParamNode;
@@ -70,8 +71,10 @@ import java.util.List;
  */
 public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
 
-  private static final SoyError PRINT_ATTR_INVALID_KIND = SoyError.of("Cannot have a print "
-      + "statement in an attributes list of kind {0}, it must be of kind attributes.");
+  private static final SoyErrorKind PRINT_ATTR_INVALID_KIND =
+      SoyErrorKind.of(
+          "Cannot have a print "
+              + "statement in an attributes list of kind {0}, it must be of kind attributes.");
 
   private static final String NAMESPACE_EXTENSION = ".incrementaldom";
 
@@ -84,22 +87,24 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
       CanInitOutputVarVisitor canInitOutputVarVisitor,
       GenJsExprsVisitorFactory genJsExprsVisitorFactory,
       GenDirectivePluginRequiresVisitor genDirectivePluginRequiresVisitor,
-      SoyTypeOps typeOps,
-      ErrorReporter errorReporter) {
-    super(jsSrcOptions,
-        true,
+      SoyTypeOps typeOps) {
+    super(
+        jsSrcOptions,
         jsExprTranslator,
         genCallCodeUtils,
         isComputableAsJsExprsVisitor,
         canInitOutputVarVisitor,
         genJsExprsVisitorFactory,
         genDirectivePluginRequiresVisitor,
-        typeOps,
-        errorReporter);
+        typeOps);
   }
 
   @Override protected CodeBuilder<JsExpr> createCodeBuilder() {
     return new IncrementalDomCodeBuilder();
+  }
+  
+  @Override protected IncrementalDomCodeBuilder getJsCodeBuilder() {
+    return (IncrementalDomCodeBuilder) super.getJsCodeBuilder();
   }
 
   /**
@@ -112,22 +117,35 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
 
   @Override protected void addCodeToRequireGeneralDeps(SoyFileNode soyFile) {
     super.addCodeToRequireGeneralDeps(soyFile);
-    jsCodeBuilder.appendLine("var IncrementalDom = goog.require('incrementaldom');");
-    jsCodeBuilder.appendLine("var ie_open = IncrementalDom.elementOpen;");
-    jsCodeBuilder.appendLine("var ie_close = IncrementalDom.elementClose;");
-    jsCodeBuilder.appendLine("var ie_void = IncrementalDom.elementVoid;");
-    jsCodeBuilder.appendLine("var ie_open_start = IncrementalDom.elementOpenStart;");
-    jsCodeBuilder.appendLine("var ie_open_end = IncrementalDom.elementOpenEnd;");
-    jsCodeBuilder.appendLine("var itext = IncrementalDom.text;");
-    jsCodeBuilder.appendLine("var iattr = IncrementalDom.attr;");
+    getJsCodeBuilder().appendLine("var IncrementalDom = goog.require('incrementaldom');")
+      .appendLine("var ie_open = IncrementalDom.elementOpen;")
+      .appendLine("var ie_close = IncrementalDom.elementClose;")
+      .appendLine("var ie_void = IncrementalDom.elementVoid;")
+      .appendLine("var ie_open_start = IncrementalDom.elementOpenStart;")
+      .appendLine("var ie_open_end = IncrementalDom.elementOpenEnd;")
+      .appendLine("var itext = IncrementalDom.text;")
+      .appendLine("var iattr = IncrementalDom.attr;");
+  }
+
+  @Override protected String getTemplateReturnType(TemplateNode node) {
+    // TODO(sparhami) need to deal with URI types properly (like the JS code gen does) so that the
+    // usage is safe. For now, don't include any return type so compilation will fail if someone
+    // tries to create a template of kind="uri".
+    if (node.getContentKind() == ContentKind.TEXT) {
+      return "string";
+    }
+
+    // This template does not return any content but rather contains Incremental DOM instructions.
+    return "void";
   }
 
   @Override protected void visitTemplateNode(TemplateNode node) {
-    jsCodeBuilder.setContentKind(node.getContentKind());
+    getJsCodeBuilder().setContentKind(node.getContentKind());
     super.visitTemplateNode(node);
   }
 
   @Override protected void generateFunctionBody(TemplateNode node) {
+    IncrementalDomCodeBuilder jsCodeBuilder = getJsCodeBuilder();
     boolean isTextTemplate = isTextContent(node.getContentKind());
     localVarTranslations.push(Maps.<String, JsExpr>newHashMap());
 
@@ -167,6 +185,9 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
    * other kinds of let statements are generated as a simple variable.
    */
   private void visitLetParamContentNode(RenderUnitNode node, String generatedVarName) {
+    IncrementalDomCodeBuilder jsCodeBuilder = getJsCodeBuilder();
+    ContentKind prevContentKind = jsCodeBuilder.getContentKind();
+
     localVarTranslations.push(Maps.<String, JsExpr>newHashMap());
     jsCodeBuilder.pushOutputVar(generatedVarName);
     jsCodeBuilder.setContentKind(node.getContentKind());
@@ -190,6 +211,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
         break;
     }
 
+    jsCodeBuilder.setContentKind(prevContentKind);
     jsCodeBuilder.popOutputVar();
     localVarTranslations.pop();
   }
@@ -213,6 +235,9 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
   }
 
   @Override protected void visitCallNode(CallNode node) {
+    Preconditions.checkState(node instanceof CallBasicNode, "Delegate template calls not yet "
+        + "supported for Incremental DOM.");
+
     // If this node has any CallParamContentNode children those contents are not computable as JS
     // expressions, visit them to generate code to define their respective 'param<n>' variables.
     for (CallParamNode child : node.getChildren()) {
@@ -221,15 +246,26 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
       }
     }
 
-    JsExpr callExpr = genCallCodeUtils.genCallExpr(node, localVarTranslations, templateAliases);
+    JsExpr callExpr =
+        genCallCodeUtils.genCallExpr(node, localVarTranslations, templateAliases, errorReporter);
+    IncrementalDomCodeBuilder jsCodeBuilder = getJsCodeBuilder();
+    String templateName = ((CallBasicNode)node).getCalleeName();
+    ContentKind currentContentKind = jsCodeBuilder.getContentKind();
+    ContentKind callContentKind = templateRegistry.getBasicTemplate(templateName).getContentKind();
 
-    // If the template is of kind="html" or kind="attributes", we just want to
-    // invoke the template call so that it renders the HTML in the current
-    // location. For text templates, we always want to concatenate the result
-    // to the output variable.
-    if (isTextContent(jsCodeBuilder.getContentKind())) {
+    // TODO(sparhami) Need to also check the current context to make sure things like calls to
+    // attributes are not placed where HTML / text is expected. Incremental DOM has runtime asserts,
+    // but better to catch it at compile time.
+    if (isTextContent(currentContentKind)) {
+      // If the current content kind (due to a let, param or template) is a text, simply
+      // concatentate the result of the call to the current output variable.
       jsCodeBuilder.addToOutputVar(ImmutableList.of(callExpr));
+    } else if (isTextContent(callContentKind)) {
+      // The function returns a string, wrap it with itext so that a Text node is generated.
+      jsCodeBuilder.appendLine("itext(", callExpr.getText(), ");");
     } else {
+      // The function contains Incremental DOM instructions that need to be run at the current
+      // location in the DOM, so just invoke it.
       jsCodeBuilder.appendLine(callExpr.getText() + ";");
     }
   }
@@ -248,6 +284,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
    * @param parentNode
    */
   private void printAttributes(ParentNode<HtmlAttributeNode> parentNode) {
+    IncrementalDomCodeBuilder jsCodeBuilder = getJsCodeBuilder();
     List<HtmlAttributeNode> attributes = parentNode.getChildren();
 
     // For now, no separating of static and dynamic attributes
@@ -265,6 +302,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
    * @param node The node containing the attribute values
    */
   private void printAttributeValues(HtmlAttributeNode node) {
+    IncrementalDomCodeBuilder jsCodeBuilder = getJsCodeBuilder();
     List<StandaloneNode> children = node.getChildren();
 
     if (children.isEmpty()) {
@@ -272,12 +310,12 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
       // the runtime knows to create an attribute.
       jsCodeBuilder.append("''");
     } else {
-      visit(children.get(0));
+      Preconditions.checkState(
+          isComputableAsJsExprsVisitor.execOnChildren(node),
+          "Attribute values that cannot be evalutated to simple expressions is not yet supported "
+              + "for Incremental DOM code generation");
 
-      for (int i = 1; i < children.size(); i++) {
-        jsCodeBuilder.append(" + ");
-        visit(children.get(i));
-      }
+      jsCodeBuilder.addToOutput(genJsExprsVisitor.execOnChildren(node));
     }
   }
 
@@ -293,6 +331,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
    * @param attributes The attributes to print
    */
   private void printAttributeList(List<HtmlAttributeNode> attributes) {
+    IncrementalDomCodeBuilder jsCodeBuilder = getJsCodeBuilder();
     HtmlAttributeNode lastAttribute = (attributes.get(attributes.size() - 1));
     jsCodeBuilder.increaseIndent();
 
@@ -306,6 +345,19 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
     }
 
     jsCodeBuilder.decreaseIndent();
+  }
+
+  /**
+   * Emits a close tag. For example:
+   *
+   * <pre>
+   * &lt;ie_close('div');&gt;
+   * </pre>
+   */
+  private void emitClose(String tagName) {
+    IncrementalDomCodeBuilder jsCodeBuilder = getJsCodeBuilder();
+    jsCodeBuilder.decreaseIndent();
+    jsCodeBuilder.appendLine("ie_close('", tagName, "');");
   }
 
   /**
@@ -341,6 +393,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
    * </pre>
    */
   @Override protected void visitHtmlAttributeNode(HtmlAttributeNode node) {
+    IncrementalDomCodeBuilder jsCodeBuilder = getJsCodeBuilder();
     jsCodeBuilder.appendLineStart("iattr('", node.getName(), "', ");
     printAttributeValues(node);
     jsCodeBuilder.appendLineEnd(");");
@@ -360,10 +413,15 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
    * </pre>
    */
   @Override protected void visitHtmlOpenTagNode(HtmlOpenTagNode node) {
+    IncrementalDomCodeBuilder jsCodeBuilder = getJsCodeBuilder();
     jsCodeBuilder.appendLineStart("ie_open('", node.getTagName(), "', null");
     printAttributes(node);
     jsCodeBuilder.appendLineEnd(");");
     jsCodeBuilder.increaseIndent();
+
+    if (HtmlDefinitions.HTML5_VOID_ELEMENTS.contains(node.getTagName())) {
+      emitClose(node.getTagName());
+    }
   }
 
   /**
@@ -378,8 +436,9 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
    *
    */
   @Override protected void visitHtmlCloseTagNode(HtmlCloseTagNode node) {
-    jsCodeBuilder.decreaseIndent();
-    jsCodeBuilder.appendLine("ie_close('", node.getTagName(), "');");
+    if (!HtmlDefinitions.HTML5_VOID_ELEMENTS.contains(node.getTagName())) {
+      emitClose(node.getTagName());
+    }
   }
 
   /**
@@ -395,6 +454,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
    * </pre>
    */
   @Override protected void visitHtmlOpenTagStartNode(HtmlOpenTagStartNode node) {
+    IncrementalDomCodeBuilder jsCodeBuilder = getJsCodeBuilder();
     jsCodeBuilder.appendLine("ie_open_start('", node.getTagName(), "');");
     jsCodeBuilder.increaseIndentTwice();
   }
@@ -412,9 +472,14 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
    * </pre>
    */
   @Override protected void visitHtmlOpenTagEndNode(HtmlOpenTagEndNode node) {
+    IncrementalDomCodeBuilder jsCodeBuilder = getJsCodeBuilder();
     jsCodeBuilder.decreaseIndentTwice();
     jsCodeBuilder.appendLine("ie_open_end();");
     jsCodeBuilder.increaseIndent();
+
+    if (HtmlDefinitions.HTML5_VOID_ELEMENTS.contains(node.getTagName())) {
+      emitClose(node.getTagName());
+    }
   }
 
   /**
@@ -433,6 +498,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
    * </pre>
    */
   @Override protected void visitHtmlVoidTagNode(HtmlVoidTagNode node) {
+    IncrementalDomCodeBuilder jsCodeBuilder = getJsCodeBuilder();
     jsCodeBuilder.appendLineStart("ie_void('", node.getTagName(), "', null");
     printAttributes(node);
     jsCodeBuilder.appendLineEnd(");");
@@ -451,7 +517,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
    * </pre>
    */
   @Override protected void visitHtmlTextNode(HtmlTextNode node) {
-    jsCodeBuilder.appendLine("itext('", node.getRawText(), "');");
+    getJsCodeBuilder().appendLine("itext('", node.getRawText(), "');");
   }
 
   /**
@@ -467,6 +533,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
    * </p>
    */
   @Override protected void visitHtmlPrintNode(HtmlPrintNode node) {
+    IncrementalDomCodeBuilder jsCodeBuilder = getJsCodeBuilder();
     PrintNode printNode = node.getPrintNode();
     ExprUnion exprUnion = printNode.getExprUnion();
     ExprRootNode expr = exprUnion.getExpr();
