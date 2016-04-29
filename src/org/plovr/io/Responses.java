@@ -31,6 +31,9 @@ public final class Responses {
     // Write the Content-Type and Content-Length headers.
     Headers responseHeaders = exchange.getResponseHeaders();
     responseHeaders.set("Content-Type", config.getJsContentType());
+    // CORS Kludge
+    responseHeaders.set("Access-Control-Allow-Origin", "*");
+    responseHeaders.set("Access-Control-Allow-Methods", "*");
     byte[] bytes = js.getBytes(config.getOutputCharset());
     exchange.sendResponseHeaders(200, bytes.length);
 

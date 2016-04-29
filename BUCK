@@ -57,5 +57,5 @@ prebuilt_jar(
 
 prebuilt_jar(
   name = 'selenium',
-  binary_jar = 'lib/selenium-java-2.21.0.jar',
+  binary_jar = 'lib/selenium-java-2.53.0.jar',
 )

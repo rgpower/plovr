@@ -25,7 +25,7 @@ PLOVR_MODULE_USE_DEBUG_MODE=true;
   for (var i = scripts.length - 1; i >= 0; --i) {
     var candidateScriptEl = scripts[i];
     var src = candidateScriptEl.src;
-    if (src.indexOf(path) >= 0) {
+    if (src.indexOf(path) >= 0 || /^\/compile/.test(path)) {
       scriptEl = candidateScriptEl;
       break;
     }
