@@ -423,6 +423,7 @@ public final class Manifest {
     if (file.isFile()) {
       String fileName = file.getName();
       if (fileName.endsWith(".js") ||
+          fileName.endsWith(".jsx") ||
           (!externsOnly && fileName.endsWith(".soy")) ||
           (!externsOnly && fileName.endsWith(".coffee"))) {
         // Using "." as the value for "paths" in the config file results in ugly
