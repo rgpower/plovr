@@ -16,30 +16,31 @@ public class TestRunner {
 
   private final URL url;
 
-  private final List<WebDriver> drivers;
+  private final List<WebDriverFactory> driverFactories;
 
   private final int timeout;
 
   /**
    *
    * @param url
-   * @param drivers
+   * @param driverFactories
    * @param timeout in milliseconds
    */
-  public TestRunner(URL url, List<WebDriver> drivers, int timeout) {
+  public TestRunner(URL url, List<WebDriverFactory> driverFactories, int timeout) {
     Preconditions.checkNotNull(url);
-    Preconditions.checkNotNull(drivers);
-    Preconditions.checkArgument(!drivers.isEmpty());
+    Preconditions.checkNotNull(driverFactories);
+    Preconditions.checkArgument(!driverFactories.isEmpty());
     Preconditions.checkArgument(timeout > 0);
     this.url = url;
-    this.drivers = ImmutableList.copyOf(drivers);
+    this.driverFactories = ImmutableList.copyOf(driverFactories);
     this.timeout = timeout;
   }
 
   // TODO: This method should be called in a thread.
   public boolean run() {
     boolean isSuccess = true;
-    for (WebDriver driver : drivers) {
+    for (WebDriverFactory driverFactory : driverFactories) {
+      WebDriver driver = driverFactory.newInstance();
       TestRunnerResult result = run(driver);
       isSuccess &= result.isSuccess;
 
@@ -60,7 +61,7 @@ public class TestRunner {
     try {
       return runTest(driver);
     } finally {
-      driver.close();
+      driver.quit();
     }
   }
 
