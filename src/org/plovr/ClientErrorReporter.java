@@ -3,7 +3,9 @@ package org.plovr;
 import com.google.common.base.Charsets;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterables;
 import com.google.common.io.Resources;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -17,11 +19,13 @@ import com.sun.net.httpserver.HttpExchange;
 
 import org.plovr.io.Responses;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.net.URL;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 /**
  * Writes Javascript that reports errors to the client.
@@ -85,10 +89,26 @@ class ClientErrorReporter {
       Preconditions.checkNotNull(errors);
       Preconditions.checkNotNull(builder);
 
+      Predicate<CompilationError> warningsFilter = new Predicate<CompilationError>() {
+        @Override
+        public boolean apply(@Nullable CompilationError compilationError) {
+          String sourceName = compilationError.getSourceName();
+          if (sourceName != null) {
+            for (Pattern warningExcludePath : config.getWarningExcludePaths()) {
+              if (warningExcludePath.matcher(sourceName).matches()) {
+                return false;
+              }
+            }
+          }
+          return true;
+        }
+      };
+      List<CompilationError> filteredWarnings = ImmutableList.copyOf(Iterables.filter(warnings, warningsFilter));
+
       String configIdJsString = gson.toJson(config.getId());
       builder.append(plovrJsLib)
           .append("plovr.addErrors(").append(gson.toJson(errors)).append(");\n")
-          .append("plovr.addWarnings(").append(gson.toJson(warnings)).append(");\n");
+          .append("plovr.addWarnings(").append(gson.toJson(filteredWarnings)).append(");\n");
       if (viewSourceUrl != null) {
         builder.append("plovr.setViewSourceUrl(\"").append(viewSourceUrl).append("\");\n");
       }
