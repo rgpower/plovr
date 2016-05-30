@@ -122,6 +122,8 @@ public final class Config implements Comparable<Config> {
 
   private final Charset outputCharset;
 
+  private final File cacheOutputFile;
+
   private final boolean fingerprintJsFiles;
 
   private final Map<String, CheckLevel> checkLevelsForDiagnosticGroups;
@@ -222,6 +224,7 @@ public final class Config implements Comparable<Config> {
       @Nullable File outputFile,
       @Nullable String outputWrapper,
       Charset outputCharset,
+      @Nullable File cacheOutputFile,
       boolean fingerprintJsFiles,
       Map<String, CheckLevel> checkLevelsForDiagnosticGroups,
       boolean exportTestFunctions,
@@ -278,6 +281,7 @@ public final class Config implements Comparable<Config> {
     this.outputFile = outputFile;
     this.outputWrapper = outputWrapper;
     this.outputCharset = outputCharset;
+    this.cacheOutputFile = cacheOutputFile;
     this.fingerprintJsFiles = fingerprintJsFiles;
     this.checkLevelsForDiagnosticGroups = checkLevelsForDiagnosticGroups;
     this.exportTestFunctions = exportTestFunctions;
@@ -382,6 +386,10 @@ public final class Config implements Comparable<Config> {
     return outputFile;
   }
 
+  public File getCacheOutputFile() {
+      return cacheOutputFile;
+  }
+
   /**
    * @return null if no output wrapper has been set
    */
@@ -475,6 +483,19 @@ public final class Config implements Comparable<Config> {
   public File getConfigFile() {
     int lastIndex = configFileInheritanceChain.size() - 1;
     return configFileInheritanceChain.get(lastIndex).file;
+  }
+
+  /**
+   * Check if any of the files in the ancestor chain have changed
+   * since this timestamp.
+   */
+  public boolean hasChangedSince(long timestamp) {
+    for (FileWithLastModified file : configFileInheritanceChain) {
+      if (file.file.lastModified() > timestamp) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -647,7 +668,6 @@ public final class Config implements Comparable<Config> {
     Preconditions.checkArgument(compilationMode != CompilationMode.RAW,
         "Cannot compile using RAW mode");
     CompilationLevel level = compilationMode.getCompilationLevel();
-    logger.info("Compiling with level: " + level);
     PlovrCompilerOptions options = new PlovrCompilerOptions();
 
     options.setTreatWarningsAsErrors(getTreatWarningsAsErrors());
@@ -1043,6 +1063,7 @@ public final class Config implements Comparable<Config> {
 
     /** List of (file, path) pairs for inputs */
     private final List<Pair<File, String>> inputs = Lists.newArrayList();
+    private final List<JsInput> jsInputs = Lists.newArrayList();
 
     private List<String> externs = null;
 
@@ -1075,6 +1096,10 @@ public final class Config implements Comparable<Config> {
     private boolean printInputDelimiter = false;
 
     private File outputFile = null;
+
+    private boolean useCacheOutputFile = true;
+
+    private File cacheOutputFile = null;
 
     private String outputWrapper = null;
 
@@ -1205,6 +1230,8 @@ public final class Config implements Comparable<Config> {
       this.outputFile = config.outputFile;
       this.outputWrapper = config.outputWrapper;
       this.outputCharset = config.outputCharset;
+      this.useCacheOutputFile = config.cacheOutputFile != null;
+      this.cacheOutputFile = config.cacheOutputFile;
       this.fingerprintJsFiles = config.fingerprintJsFiles;
       this.checkLevelsForDiagnosticGroups = config.checkLevelsForDiagnosticGroups;
       this.exportTestFunctions = config.exportTestFunctions;
@@ -1267,6 +1294,10 @@ public final class Config implements Comparable<Config> {
       Preconditions.checkNotNull(file);
       Preconditions.checkNotNull(name);
       inputs.add(Pair.of(file, name));
+    }
+
+    public void addInput(JsInput input) {
+      jsInputs.add(input);
     }
 
     public void addInputByName(String name) {
@@ -1458,6 +1489,14 @@ public final class Config implements Comparable<Config> {
 
     public void setOutputFile(File outputFile) {
       this.outputFile = outputFile;
+    }
+
+    public void setCacheOutputFile(File cacheOutputFile) {
+      this.cacheOutputFile = cacheOutputFile;
+    }
+
+    public void setUseCacheOutputFile(boolean useCacheOutputFile) {
+      this.useCacheOutputFile = useCacheOutputFile;
     }
 
     public void setOutputWrapper(String outputWrapper) {
@@ -1727,6 +1766,14 @@ public final class Config implements Comparable<Config> {
         manifest = this.manifest;
       }
 
+      // For the plovr serve command, create a default
+      // cache-output-file if none has been assigned UNLESS the user
+      // has specifically suppressed this with the
+      // 'cache-output-file=none' configuration.
+      if (cacheOutputFile == null && useCacheOutputFile) {
+        cacheOutputFile = FileUtil.getTmpFile("plovr-serve-cache.js");
+      }
+
       Config config = new Config(
           id,
           rootConfigFileContent,
@@ -1745,6 +1792,7 @@ public final class Config implements Comparable<Config> {
           outputFile,
           outputWrapper,
           outputCharset,
+          cacheOutputFile,
           fingerprintJsFiles,
           checkLevelsForDiagnosticGroups,
           exportTestFunctions,
@@ -1796,6 +1844,8 @@ public final class Config implements Comparable<Config> {
         jsInputs.add(
             LocalFileJsInput.createForFileWithName(file, name, soyFileOptions));
       }
+
+      jsInputs.addAll(this.jsInputs);
 
       return jsInputs;
     }
