@@ -386,6 +386,26 @@ public final class Config implements Comparable<Config> {
     return outputFile;
   }
 
+  /**
+   * Gets a Key to cache output files by.
+   *
+   * This should include any value with a ConfigOption.update
+   * method, because those can change on a per-request basis.
+   */
+  public Object getCacheOutputKey() {
+    return ImmutableMap.<String, Object>builder()
+        .put("id", Strings.nullToEmpty(getId()))
+        .put("mode", getCompilationMode())
+        .put("level", getWarningLevel())
+        .put("debug", debug)
+        .put("pretty-print", prettyPrint)
+        .put("print-input-delimeter", printInputDelimiter)
+        .put("soy-use-injected-data", getSoyUseInjectedData())
+        .put("css-output-format", getCssOutputFormat())
+        .put("language", Strings.nullToEmpty(getLanguage()))
+        .build();
+  }
+
   public File getCacheOutputFile() {
       return cacheOutputFile;
   }
@@ -1097,8 +1117,6 @@ public final class Config implements Comparable<Config> {
 
     private File outputFile = null;
 
-    private boolean useCacheOutputFile = true;
-
     private File cacheOutputFile = null;
 
     private String outputWrapper = null;
@@ -1230,7 +1248,6 @@ public final class Config implements Comparable<Config> {
       this.outputFile = config.outputFile;
       this.outputWrapper = config.outputWrapper;
       this.outputCharset = config.outputCharset;
-      this.useCacheOutputFile = config.cacheOutputFile != null;
       this.cacheOutputFile = config.cacheOutputFile;
       this.fingerprintJsFiles = config.fingerprintJsFiles;
       this.checkLevelsForDiagnosticGroups = config.checkLevelsForDiagnosticGroups;
@@ -1274,11 +1291,12 @@ public final class Config implements Comparable<Config> {
       return this.relativePathBase;
     }
 
-    public void setId(String id) {
+    public Builder setId(String id) {
       Preconditions.checkNotNull(id);
       Preconditions.checkArgument(ID_PATTERN.matcher(id).matches(),
               String.format("Not a valid config id: %s", id));
       this.id = id;
+      return this;
     }
 
     public void addPath(ConfigPath path) {
@@ -1290,14 +1308,16 @@ public final class Config implements Comparable<Config> {
       paths.clear();
     }
 
-    public void addInput(File file, String name) {
+    public Builder addInput(File file, String name) {
       Preconditions.checkNotNull(file);
       Preconditions.checkNotNull(name);
       inputs.add(Pair.of(file, name));
+      return this;
     }
 
-    public void addInput(JsInput input) {
+    public Builder addInput(JsInput input) {
       jsInputs.add(input);
+      return this;
     }
 
     public void addInputByName(String name) {
@@ -1465,9 +1485,10 @@ public final class Config implements Comparable<Config> {
       }
     }
 
-    public void setCompilationMode(CompilationMode mode) {
+    public Builder setCompilationMode(CompilationMode mode) {
       Preconditions.checkNotNull(mode);
       this.compilationMode = mode;
+      return this;
     }
 
     public void setWarningLevel(WarningLevel level) {
@@ -1493,10 +1514,6 @@ public final class Config implements Comparable<Config> {
 
     public void setCacheOutputFile(File cacheOutputFile) {
       this.cacheOutputFile = cacheOutputFile;
-    }
-
-    public void setUseCacheOutputFile(boolean useCacheOutputFile) {
-      this.useCacheOutputFile = useCacheOutputFile;
     }
 
     public void setOutputWrapper(String outputWrapper) {
@@ -1764,14 +1781,6 @@ public final class Config implements Comparable<Config> {
             customExternsOnly);
       } else {
         manifest = this.manifest;
-      }
-
-      // For the plovr serve command, create a default
-      // cache-output-file if none has been assigned UNLESS the user
-      // has specifically suppressed this with the
-      // 'cache-output-file=none' configuration.
-      if (cacheOutputFile == null && useCacheOutputFile) {
-        cacheOutputFile = FileUtil.getTmpFile("plovr-serve-cache.js");
       }
 
       Config config = new Config(
