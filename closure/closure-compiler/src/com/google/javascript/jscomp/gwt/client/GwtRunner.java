@@ -35,6 +35,7 @@ import jsinterop.annotations.JsPackage;
 import jsinterop.annotations.JsProperty;
 import jsinterop.annotations.JsType;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -70,35 +71,23 @@ public final class GwtRunner implements EntryPoint {
 
   @JsType(namespace = JsPackage.GLOBAL, name = "Object", isNative = true)
   private interface Flags {
-    @JsProperty
-    String getCompilationLevel();
+    @JsProperty boolean getAngularPass();
+    @JsProperty String getCompilationLevel();
+    @JsProperty boolean getGenerateExports();
+    @JsProperty String getLanguageIn();
+    @JsProperty String getLanguageOut();
+    @JsProperty boolean getChecksOnly();
+    @JsProperty boolean getNewTypeInf();
+    @JsProperty boolean getPolymerPass();
+    @JsProperty boolean getPreserveTypeAnnotations();
+    @JsProperty String getRenamePrefixNamespace();
+    @JsProperty boolean getRewritePolyfills();
+    @JsProperty String getWarningLevel();
 
-    @JsProperty
-    String getWarningLevel();
-
-    @JsProperty
-    String getLanguageIn();
-
-    @JsProperty
-    String getLanguageOut();
-
-    @JsProperty
-    boolean getChecksOnly();
-
-    @JsProperty
-    boolean getNewTypeInf();
-
-    @JsProperty
-    boolean getPreserveTypeAnnotations();
-
-    @JsProperty
-    boolean getRewritePolyfills();
-
-    @JsProperty
-    File[] getJsCode();
-
-    @JsProperty
-    File[] getExterns();
+    // These flags do not match the Java compiler JAR.
+    @JsProperty File[] getJsCode();
+    @JsProperty File[] getExterns();
+    @JsProperty boolean getCreateSourceMap();  // String in JAR
   }
 
   @JsType(namespace = JsPackage.GLOBAL, name = "Object", isNative = true)
@@ -110,6 +99,7 @@ public final class GwtRunner implements EntryPoint {
   @JsType(namespace = JsPackage.GLOBAL, name = "Object", isNative = true)
   private static class ModuleOutput {
     @JsProperty String compiledCode;
+    @JsProperty String sourceMap;
     @JsProperty JavaScriptObject[] errors;
     @JsProperty JavaScriptObject[] warnings;
   }
@@ -136,9 +126,8 @@ public final class GwtRunner implements EntryPoint {
   private static void applyDefaultOptions(CompilerOptions options) {
     CompilationLevel.SIMPLE_OPTIMIZATIONS.setOptionsForCompilationLevel(options);
     WarningLevel.DEFAULT.setOptionsForWarningLevel(options);
-    options.setLanguageIn(LanguageMode.ECMASCRIPT5);
-    options.setLanguageOut(LanguageMode.ECMASCRIPT3);
-    options.setPrettyPrint(true);
+    options.setLanguageIn(LanguageMode.ECMASCRIPT6);
+    options.setLanguageOut(LanguageMode.ECMASCRIPT5);
   }
 
   private static void applyOptionsFromFlags(CompilerOptions options, Flags flags) {
@@ -175,9 +164,17 @@ public final class GwtRunner implements EntryPoint {
       }
     }
 
+    if (flags.getCreateSourceMap()) {
+      options.setSourceMapOutputPath("%output%");
+    }
+
+    options.setAngularPass(flags.getAngularPass());
     options.setChecksOnly(flags.getChecksOnly());
+    options.setGenerateExports(flags.getGenerateExports());
     options.setNewTypeInference(flags.getNewTypeInf());
+    options.setPolymerPass(flags.getPolymerPass());
     options.setPreserveTypeAnnotations(flags.getPreserveTypeAnnotations());
+    options.setRenamePrefixNamespace(flags.getRenamePrefixNamespace());
     options.setRewritePolyfills(flags.getRewritePolyfills());
   }
 
@@ -225,6 +222,17 @@ public final class GwtRunner implements EntryPoint {
     output.compiledCode = compiler.toSource();
     output.errors = toNativeErrorArray(errorManager.errors);
     output.warnings = toNativeErrorArray(errorManager.warnings);
+
+    if (flags.getCreateSourceMap()) {
+      StringBuilder b = new StringBuilder();
+      try {
+        compiler.getSourceMap().appendTo(b, "IGNORED");
+      } catch (IOException e) {
+        // ignore
+      }
+      output.sourceMap = b.toString();
+    }
+
     return output;
   }
 

@@ -45,7 +45,6 @@ import com.google.javascript.jscomp.lint.CheckUselessBlocks;
 import com.google.javascript.jscomp.parsing.ParserRunner;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -330,16 +329,16 @@ public final class DefaultPassConfig extends PassConfig {
       checks.add(objectPropertyStringPreprocess);
     }
 
-    if (options.getLanguageIn().isEs6OrHigher() && !options.skipTranspilationAndCrash) {
-      checks.add(es6ExternsCheck);
-      checks.add(es6SuperCheck);
-      TranspilationPasses.addEs6EarlyPasses(checks);
-    }
-
     // It's important that the Dart super accessors pass run *before* es6ConvertSuper,
     // which is a "late" ES6 pass. This is enforced in the assertValidOrder method.
     if (options.dartPass && !options.getLanguageOut().isEs6OrHigher()) {
       checks.add(dartSuperAccessorsPass);
+    }
+
+    if (options.getLanguageIn().isEs6OrHigher() && !options.skipTranspilationAndCrash) {
+      checks.add(es6ExternsCheck);
+      checks.add(es6SuperCheck);
+      TranspilationPasses.addEs6EarlyPasses(checks);
     }
 
     if (options.getLanguageIn().isEs6OrHigher() && !options.skipTranspilationAndCrash) {
@@ -457,6 +456,10 @@ public final class DefaultPassConfig extends PassConfig {
       checks.add(computeFunctionNames);
     }
 
+    if (options.j2clPassMode.equals(CompilerOptions.J2clPassMode.AUTO)) {
+      checks.add(j2clSourceFileChecker);
+    }
+
     checks.add(createEmptyPass("afterStandardChecks"));
 
     assertAllOneTimePasses(checks);
@@ -494,7 +497,7 @@ public final class DefaultPassConfig extends PassConfig {
     //
     // Inlining these functions turns a dynamic access to a static property of a class definition
     // into a fully qualified access and in so doing enables better dead code stripping.
-    if (options.j2clPass) {
+    if (options.j2clPassMode.shouldAddJ2clPasses()) {
       passes.add(j2clPass);
       passes.add(j2clPropertyInlinerPass);
     }
@@ -535,7 +538,7 @@ public final class DefaultPassConfig extends PassConfig {
       passes.add(inferConsts);
     }
 
-    if (options.reportPath != null && (options.extraSmartNameRemoval || options.smartNameRemoval)) {
+    if (options.reportPath != null && options.smartNameRemoval) {
       passes.add(initNameAnalyzeReport);
     }
 
@@ -639,7 +642,7 @@ public final class DefaultPassConfig extends PassConfig {
     // Because FlowSensitiveInlineVariables does not operate on the global scope due to compilation
     // time, we need to run it once before InlineFunctions so that we don't miss inlining
     // opportunities when a function will be inlined into the global scope.
-    if (options.flowSensitiveInlineVariables) {
+    if (options.inlineVariables || options.inlineLocalVariables) {
       passes.add(flowSensitiveInlineVariables);
     }
 
@@ -665,7 +668,7 @@ public final class DefaultPassConfig extends PassConfig {
           CustomPassExecutionTime.AFTER_OPTIMIZATION_LOOP));
     }
 
-    if (options.flowSensitiveInlineVariables) {
+    if (options.inlineVariables || options.inlineLocalVariables) {
       passes.add(flowSensitiveInlineVariables);
 
       // After inlining some of the variable uses, some variables are unused.
@@ -816,7 +819,6 @@ public final class DefaultPassConfig extends PassConfig {
     // Raise to ES6, if allowed
     if (options.getLanguageOut().isEs6OrHigher()) {
       passes.add(optimizeToEs6);
-      passes.add(objectLitAssignmentShortening);
       passes.add(rewriteBindThis);
     }
 
@@ -907,7 +909,7 @@ public final class DefaultPassConfig extends PassConfig {
       passes.add(removeUnusedClassProperties);
     }
 
-    if (options.j2clPass) {
+    if (options.j2clPassMode.shouldAddJ2clPasses()) {
       passes.add(j2clClinitPrunerPass);
       passes.add(j2clConstantHoisterPass);
       passes.add(j2clEqualitySameRewriterPass);
@@ -2013,7 +2015,7 @@ public final class DefaultPassConfig extends PassConfig {
     @Override
     protected CompilerPass create(AbstractCompiler compiler) {
       return new PureFunctionIdentifier.Driver(
-          compiler, options.debugFunctionSideEffectsPath, false);
+          compiler, options.debugFunctionSideEffectsPath);
     }
   };
 
@@ -2670,28 +2672,28 @@ public final class DefaultPassConfig extends PassConfig {
         }
       };
 
+  private final PassFactory j2clSourceFileChecker =
+      new PassFactory("j2clSourceFileChecker", true) {
+        @Override
+        protected CompilerPass create(final AbstractCompiler compiler) {
+          return new J2clSourceFileChecker(compiler);
+        }
+      };
+
   private final PassFactory checkConformance =
       new PassFactory("checkConformance", true) {
-    @Override
-    protected CompilerPass create(final AbstractCompiler compiler) {
-      return new CheckConformance(
-          compiler, ImmutableList.copyOf(options.getConformanceConfigs()));
-    }
-  };
+        @Override
+        protected CompilerPass create(final AbstractCompiler compiler) {
+          return new CheckConformance(
+              compiler, ImmutableList.copyOf(options.getConformanceConfigs()));
+        }
+      };
 
   /** Optimizations that output ES6 features. */
   private final PassFactory optimizeToEs6 = new PassFactory("optimizeToEs6", true) {
     @Override
     protected CompilerPass create(AbstractCompiler compiler) {
       return new SubstituteEs6Syntax(compiler);
-    }
-  };
-
-  private final PassFactory objectLitAssignmentShortening =
-      new PassFactory("objectLitAssignmentShortening", true) {
-    @Override
-    protected CompilerPass create(AbstractCompiler compiler) {
-      return new ObjectLitAssignmentShortening(compiler);
     }
   };
 

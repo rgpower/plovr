@@ -228,12 +228,25 @@ public class DiagnosticGroups {
           TypeValidator.ALL_DIAGNOSTICS,
           TypeCheck.ALL_DIAGNOSTICS);
 
+  // Run the new type inference, but omit many warnings that are not
+  // found by the old type checker. This makes migration to NTI more manageable.
+  public static final DiagnosticGroup NEW_CHECK_TYPES_COMPATIBILITY_MODE =
+      DiagnosticGroups.registerGroup("newCheckTypesCompatibility",  // undocumented
+          JSTypeCreatorFromJSDoc.COMPATIBLE_DIAGNOSTICS,
+          GlobalTypeInfo.COMPATIBLE_DIAGNOSTICS,
+          NewTypeInference.COMPATIBLE_DIAGNOSTICS);
+
+  public static final DiagnosticGroup NEW_CHECK_TYPES_EXTRA_CHECKS =
+      DiagnosticGroups.registerGroup("newCheckTypesExtraChecks",  // undocumented
+          JSTypeCreatorFromJSDoc.NEW_DIAGNOSTICS,
+          GlobalTypeInfo.NEW_DIAGNOSTICS,
+          NewTypeInference.NEW_DIAGNOSTICS);
+
   // Part of the new type inference
   public static final DiagnosticGroup NEW_CHECK_TYPES =
       DiagnosticGroups.registerGroup("newCheckTypes",
-          JSTypeCreatorFromJSDoc.ALL_DIAGNOSTICS,
-          GlobalTypeInfo.ALL_DIAGNOSTICS,
-          NewTypeInference.ALL_DIAGNOSTICS);
+          NEW_CHECK_TYPES_COMPATIBILITY_MODE,
+          NEW_CHECK_TYPES_EXTRA_CHECKS);
 
   public static final DiagnosticGroup CHECK_TYPES =
       DiagnosticGroups.registerGroup("checkTypes",
@@ -242,7 +255,6 @@ public class DiagnosticGroups {
 
   public static final DiagnosticGroup NEW_CHECK_TYPES_ALL_CHECKS =
       DiagnosticGroups.registerGroup("newCheckTypesAllChecks",
-          JSTypeCreatorFromJSDoc.CONFLICTING_SHAPE_TYPE,
           NewTypeInference.NULLABLE_DEREFERENCE);
 
   static {
@@ -276,7 +288,6 @@ public class DiagnosticGroups {
 //           GlobalTypeInfo.REDECLARED_PROPERTY,
           GlobalTypeInfo.STRUCTDICT_WITHOUT_CTOR,
           GlobalTypeInfo.SUPER_INTERFACES_HAVE_INCOMPATIBLE_PROPERTIES,
-          GlobalTypeInfo.UNDECLARED_NAMESPACE,
           GlobalTypeInfo.UNKNOWN_OVERRIDE,
           GlobalTypeInfo.UNRECOGNIZED_TYPE_NAME,
           NewTypeInference.ASSERT_FALSE,
@@ -348,13 +359,20 @@ public class DiagnosticGroups {
           CheckAccessControls.CONST_PROPERTY_REASSIGNED_VALUE,
           ConstCheck.CONST_REASSIGNED_VALUE_ERROR,
           NewTypeInference.CONST_REASSIGNED,
-          NewTypeInference.CONST_PROPERTY_REASSIGNED);
+          NewTypeInference.CONST_PROPERTY_REASSIGNED,
+          NewTypeInference.CONST_PROPERTY_DELETED);
+
+  static final DiagnosticGroup ACCESS_CONTROLS_CONST =
+      DiagnosticGroups.registerGroup("accessControlsConst",
+          CheckAccessControls.CONST_PROPERTY_DELETED,
+          CheckAccessControls.CONST_PROPERTY_REASSIGNED_VALUE);
 
   public static final DiagnosticGroup CONSTANT_PROPERTY =
       DiagnosticGroups.registerGroup("constantProperty",
           CheckAccessControls.CONST_PROPERTY_DELETED,
           CheckAccessControls.CONST_PROPERTY_REASSIGNED_VALUE,
-          NewTypeInference.CONST_PROPERTY_REASSIGNED);
+          NewTypeInference.CONST_PROPERTY_REASSIGNED,
+          NewTypeInference.CONST_PROPERTY_DELETED);
 
   public static final DiagnosticGroup TYPE_INVALIDATION =
       DiagnosticGroups.registerGroup("typeInvalidation",
@@ -402,7 +420,6 @@ public class DiagnosticGroups {
   public static final DiagnosticGroup MISSING_PROVIDE =
       DiagnosticGroups.registerGroup("missingProvide",
           CheckProvides.MISSING_PROVIDE_WARNING,
-          ClosureRewriteModule.MISSING_MODULE,
           ClosureRewriteModule.MISSING_MODULE_OR_PROVIDE);
 
   public static final DiagnosticGroup MISSING_REQUIRE =

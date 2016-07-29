@@ -333,7 +333,7 @@ public final class Es6TypedToEs6Converter implements NodeTraversal.Callback, Hot
     Node declaredType = convertWithLocation(indexSignature.getDeclaredTypeExpression());
     Node block = new Node(Token.BLOCK, indexType, declaredType);
     Node iObject = IR.string("IObject");
-    iObject.addChildrenToFront(block);
+    iObject.addChildToFront(block);
     JSTypeExpression bang = new JSTypeExpression(new Node(Token.BANG, iObject)
         .useSourceInfoIfMissingFromForTree(indexSignature), indexSignature.getSourceFileName());
     indexSignature.detachFromParent();
@@ -736,7 +736,7 @@ public final class Es6TypedToEs6Converter implements NodeTraversal.Callback, Hot
           member.setDeclaredTypeExpression(null);
           colon.addChildToBack(member.detachFromParent());
           colon.addChildToBack(memberType);
-          lb.addChildrenToBack(colon);
+          lb.addChildToBack(colon);
         }
         return new Node(Token.LC, lb);
       }
@@ -898,6 +898,8 @@ public final class Es6TypedToEs6Converter implements NodeTraversal.Callback, Hot
             case NAMESPACE:
             case DECLARE:
               return true;
+            default:
+              break;
           }
           return false;
         case NAMESPACE:
@@ -924,6 +926,8 @@ public final class Es6TypedToEs6Converter implements NodeTraversal.Callback, Hot
             currNamespace.typeNames.add(n.getString());
           }
           return true;
+        default:
+          break;
       }
       return false;
     }

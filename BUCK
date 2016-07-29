@@ -1,9 +1,11 @@
 java_binary(
   name = 'plovr',
   deps = [':plovr-lib'],
+  manifest_file = "plovr.manifest.mf",
   main_class = 'org.plovr.cli.Main')
 
 java_library(
+  extra_arguments = ['-Xlint:deprecation'],
   name = 'plovr-lib',
   srcs = glob(['src/**/*.java']),
   resources = glob([
@@ -57,5 +59,5 @@ prebuilt_jar(
 
 prebuilt_jar(
   name = 'selenium',
-  binary_jar = 'lib/selenium-java-2.21.0.jar',
+  binary_jar = 'lib/selenium-java-2.53.0.jar',
 )

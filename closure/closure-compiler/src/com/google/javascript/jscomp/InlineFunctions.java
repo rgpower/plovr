@@ -225,6 +225,8 @@ class InlineFunctions implements CompilerPass {
             maybeAddFunction(fn, t.getModule());
           }
           break;
+        default:
+          break;
       }
     }
 
@@ -255,6 +257,8 @@ class InlineFunctions implements CompilerPass {
             maybeAddFunction(fn, t.getModule());
             anonFns.put(fnNode, fn.getName());
           }
+          break;
+        default:
           break;
       }
     }
@@ -433,6 +437,8 @@ class InlineFunctions implements CompilerPass {
             }
           }
           break;
+        default:
+          break;
       }
     }
   }
@@ -584,7 +590,7 @@ class InlineFunctions implements CompilerPass {
       if (parent.isNew()) {
         Node target = parent.getFirstChild();
         if (target.isName() && target.getString().equals(
-            SimpleDefinitionFinder.EXTERN_OBJECT_PROPERTY_STRING)) {
+            NodeUtil.EXTERN_OBJECT_PROPERTY_STRING)) {
           // This method is going to be replaced so don't inline it anywhere.
           fs.setInline(false);
         }

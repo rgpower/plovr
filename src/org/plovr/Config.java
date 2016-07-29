@@ -18,6 +18,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import com.google.common.css.JobDescription;
+import com.google.common.io.ByteStreams;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
@@ -28,12 +29,15 @@ import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
 import com.google.javascript.jscomp.CompilerPass;
 import com.google.javascript.jscomp.CustomPassExecutionTime;
 import com.google.javascript.jscomp.DiagnosticGroup;
+import com.google.javascript.jscomp.MessageBundle;
 import com.google.javascript.jscomp.PlovrCompilerOptions;
 import com.google.javascript.jscomp.SourceMap.LocationMapping;
 import com.google.javascript.jscomp.StrictWarningsGuard;
 import com.google.javascript.jscomp.VariableMap;
 import com.google.javascript.jscomp.WarningLevel;
 import com.google.javascript.jscomp.XtbMessageBundle;
+import com.google.template.soy.msgs.SoyMsgBundle;
+import com.google.template.soy.xliffmsgplugin.XliffMsgPlugin;
 import com.google.template.soy.xliffmsgplugin.XliffMsgPluginModule;
 
 import org.plovr.util.Pair;
@@ -50,7 +54,6 @@ import java.lang.reflect.Method;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.Charset;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -195,6 +198,8 @@ public final class Config implements Comparable<Config> {
 
   private final List<LocationMapping> locationMappings;
 
+  private final Set<Pattern> warningExcludePaths;
+
   /**
    * @param id Unique identifier for the configuration. This is used as an
    *        argument to the &lt;script> tag that loads the compiled code.
@@ -255,7 +260,8 @@ public final class Config implements Comparable<Config> {
       PrintStream errorStream,
       List<LocationMapping> locationMappings,
       File translationsDirectory,
-      String language) {
+      String language,
+      Set<Pattern> warningExcludePaths) {
     Preconditions.checkNotNull(defines);
 
     this.id = id;
@@ -314,6 +320,7 @@ public final class Config implements Comparable<Config> {
     this.locationMappings = locationMappings;
     this.translationsDirectory = translationsDirectory;
     this.language = language;
+    this.warningExcludePaths = warningExcludePaths;
   }
 
   public static Builder builder(File relativePathBase, File configFile,
@@ -466,7 +473,7 @@ public final class Config implements Comparable<Config> {
    * in response to an HTTP request.
    */
   public String getJsContentType() {
-    return "text/javascript; charset=" + outputCharset.name();
+    return "application/javascript; charset=" + outputCharset.name();
   }
 
   /**
@@ -642,13 +649,22 @@ public final class Config implements Comparable<Config> {
     return language;
   }
 
+  public Set<Pattern> getWarningExcludePaths() { return warningExcludePaths; }
+
   /**
    * @param path a relative path, such as "foo/bar_test.js" or
    *     "foo/bar_test.html".
    * @return the file under a test directory, if it exists, or null
    */
   public @Nullable File getTestFile(String path) {
-    for (File dependency : manifest.getDependencies()) {
+    Set<File> deps;
+    if (moduleConfig == null) {
+      deps = manifest.getDependencies();
+    } else {
+      deps = ModuleConfig.getModuleDependencies(manifest);
+    }
+
+    for (File dependency : deps) {
       if (!dependency.isDirectory()) {
         continue;
       }
@@ -814,27 +830,16 @@ public final class Config implements Comparable<Config> {
 
     options.setExternExports(true);
 
-    if (translationsDirectory != null && language != null) {
+    File translationFile = findTranslationFile(translationsDirectory, language);
+    if (translationFile != null) {
+      MessageBundle bundle;
       try {
-        File[] files = translationsDirectory.listFiles(new FilenameFilter() {
-          @Override public boolean accept(File dir, String name) {
-            return name.startsWith(language) && (
-                name.endsWith(".xtb") ||
-                name.endsWith(".xliff") ||
-                name.endsWith(".xlf"));
-          }
-          });
-          if (files.length == 0) {
-            logger.severe("Unable to find translations file for " + language);
-          } else {
-            if (files[0].getName().endsWith(".xtb")) {
-              options.setMessageBundle(
-                  new XtbMessageBundle(new FileInputStream(files[0]), null));
-            } else {
-              options.setMessageBundle(
-                  new XliffMessageBundle(new FileInputStream(files[0]), null));
-            }
-          }
+        if (translationFile.getName().endsWith(".xtb")) {
+          bundle = new XtbMessageBundle(new FileInputStream(translationFile), null);
+        } else {
+          bundle = new XliffMessageBundle(new FileInputStream(translationFile), null);
+        }
+        options.setMessageBundle(bundle);
       } catch (IOException e) {
         logger.severe("Unable to load translations file: " + e.getMessage());
       }
@@ -852,6 +857,25 @@ public final class Config implements Comparable<Config> {
     applyExperimentalCompilerOptions(experimentalCompilerOptions, options);
 
     return options;
+  }
+
+  private static File findTranslationFile(final File translationsDirectory, final String language) {
+    if (translationsDirectory != null && language != null) {
+      File[] files = translationsDirectory.listFiles(new FilenameFilter() {
+        @Override public boolean accept(File dir, String name) {
+          return name.startsWith(language) && (
+              name.endsWith(".xtb") ||
+                  name.endsWith(".xliff") ||
+                  name.endsWith(".xlf"));
+        }
+      });
+      if (files.length == 0) {
+        logger.severe("Unable to find translations file for " + language);
+      } else {
+        return files[0];
+      }
+    }
+    return null;
   }
 
   /**
@@ -1167,6 +1191,8 @@ public final class Config implements Comparable<Config> {
 
     private List<LocationMapping> locationMappings = Lists.newArrayList();
 
+    private Set<Pattern> warningExcludePaths = Sets.newHashSet();
+
     /**
      * Pattern to validate a config id. A config id may not contain funny
      * characters, such as slashes, because ids are used in RESTful URLs, so
@@ -1257,6 +1283,7 @@ public final class Config implements Comparable<Config> {
       this.language = config.language;
       this.cssOutputFormat = config.cssOutputFormat;
       this.errorStream = config.errorStream;
+      this.warningExcludePaths = config.warningExcludePaths;
     }
 
     /** Directory against which relative paths should be resolved. */
@@ -1692,6 +1719,14 @@ public final class Config implements Comparable<Config> {
       this.errorStream = Preconditions.checkNotNull(errorStream);
     }
 
+    public void addWarningExcludePath(Pattern path) {
+      warningExcludePaths.add(path);
+    }
+
+    public void resetWarningExcludePaths() {
+      warningExcludePaths.clear();
+    }
+
     public Config build() {
       File closureLibraryDirectory = pathToClosureLibrary != null
           ? new File(pathToClosureLibrary)
@@ -1718,8 +1753,22 @@ public final class Config implements Comparable<Config> {
           }
         }
 
+        SoyMsgBundle soyMsgBundle = null;
+        File translationsFile = findTranslationFile(this.translationsDirectory, this.language);
+        if (translationsFile != null) {
+          try {
+            FileInputStream xliff = new FileInputStream(translationsFile);
+            if (!translationsFile.getName().endsWith(".xtb")) {
+              soyMsgBundle = new XliffMsgPlugin().parseTranslatedMsgsFile(
+                  new String(ByteStreams.toByteArray(xliff), Charsets.UTF_8));
+            }
+          } catch(IOException e) {
+            logger.severe("Unable to load translations file: " + e.getMessage());
+          }
+
+        }
         SoyFileOptions soyFileOptions = new SoyFileOptions(soyFunctionNames,
-            !this.excludeClosureLibrary, this.soyUseInjectedData);
+            !this.excludeClosureLibrary, this.soyUseInjectedData, soyMsgBundle);
 
         manifest = new Manifest(
             excludeClosureLibrary,
@@ -1788,7 +1837,8 @@ public final class Config implements Comparable<Config> {
           errorStream,
           locationMappings,
           translationsDirectory,
-          language);
+          language,
+          warningExcludePaths);
 
       return config;
     }

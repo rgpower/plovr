@@ -22,7 +22,7 @@ public class SoyFileOptionsTest {
   @Test
   public void testConstructor() {
     List<String> pluginModuleNames = ImmutableList.of("one", "two");
-    SoyFileOptions options = new SoyFileOptions(pluginModuleNames, false, true);
+    SoyFileOptions options = new SoyFileOptions(pluginModuleNames, false, true, null);
     assertFalse(options.useClosureLibrary);
     assertTrue(options.isUsingInjectedData);
     assertEquals(ImmutableList.of("one", "two"), options.pluginModuleNames);
@@ -36,15 +36,15 @@ public class SoyFileOptionsTest {
     assertEquals(defaultOptions.hashCode(), defaultOptions2.hashCode());
 
     List<String> pluginModuleNames = ImmutableList.of("one", "two");
-    SoyFileOptions options = new SoyFileOptions(pluginModuleNames, false, false);
+    SoyFileOptions options = new SoyFileOptions(pluginModuleNames, false, false, null);
     assertFalse(defaultOptions.equals(options));
     assertTrue(defaultOptions.hashCode() != options.hashCode());
 
-    SoyFileOptions options2 = new SoyFileOptions(pluginModuleNames, false, false);
+    SoyFileOptions options2 = new SoyFileOptions(pluginModuleNames, false, false, null);
     assertTrue(options.equals(options2));
     assertEquals(options.hashCode(), options2.hashCode());
 
-    SoyFileOptions options3 = new SoyFileOptions(pluginModuleNames, false, true);
+    SoyFileOptions options3 = new SoyFileOptions(pluginModuleNames, false, true, null);
     assertFalse(options.equals(options3));
     assertTrue(options.hashCode() != options3.hashCode());
   }

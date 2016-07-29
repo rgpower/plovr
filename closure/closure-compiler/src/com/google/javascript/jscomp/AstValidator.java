@@ -1391,6 +1391,8 @@ public final class AstValidator implements CompilerPass {
       case EXPORT:
         validateExport(n, true);
         break;
+      default:
+        break;
     }
   }
 
@@ -1409,6 +1411,8 @@ public final class AstValidator implements CompilerPass {
         break;
       case GETPROP:
         validateGetProp(n);
+        break;
+      default:
         break;
     }
   }
@@ -1444,9 +1448,7 @@ public final class AstValidator implements CompilerPass {
   private void validateChildCount(Node n, int expected) {
     int count = n.getChildCount();
     if (expected != count) {
-      violation(
-          "Expected " + expected + " children, but was "
-              + n.getChildCount(), n);
+      violation("Expected " + expected + " children, but was " + count, n);
     }
   }
 

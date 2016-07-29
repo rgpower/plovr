@@ -73,13 +73,11 @@ import com.google.javascript.rhino.jstype.Property;
 import com.google.javascript.rhino.jstype.TemplateType;
 import com.google.javascript.rhino.jstype.TemplateTypeMap;
 import com.google.javascript.rhino.jstype.TemplateTypeMapReplacer;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
 import javax.annotation.Nullable;
 
 /**
@@ -397,6 +395,8 @@ final class TypedScopeCreator implements ScopeCreator {
                 firstChild, firstChild.getJSDocInfo());
           }
           break;
+        default:
+          break;
       }
     }
 
@@ -566,6 +566,8 @@ final class TypedScopeCreator implements ScopeCreator {
             maybeDeclareQualifiedName(t, n.getJSDocInfo(), n, parent, null);
           }
           break;
+        default:
+          break;
       }
 
       // Analyze any @lends object literals in this statement.
@@ -623,6 +625,8 @@ final class TypedScopeCreator implements ScopeCreator {
         // above.
         case ARRAYLIT:
           n.setJSType(getNativeType(ARRAY_TYPE));
+          break;
+        default:
           break;
       }
     }
@@ -1571,9 +1575,14 @@ final class TypedScopeCreator implements ScopeCreator {
               typeRegistry.createDefaultObjectUnion(delegateBaseObject),
               functionParamBuilder.build());
 
-          FunctionType delegateProxy = typeRegistry.createConstructorType(
-              delegateBaseObject.getReferenceName() + DELEGATE_PROXY_SUFFIX,
-              null, null, null, null);
+          FunctionType delegateProxy =
+              typeRegistry.createConstructorType(
+                  delegateBaseObject.getReferenceName() + DELEGATE_PROXY_SUFFIX,
+                  null,
+                  null,
+                  null,
+                  null,
+                  false);
           delegateProxy.setPrototypeBasedOn(delegateBaseObject);
 
           codingConvention.applyDelegateRelationship(
@@ -1881,6 +1890,8 @@ final class TypedScopeCreator implements ScopeCreator {
           if (n.hasOneChild()) {
             checkForTypedef(n.getFirstChild(), n.getJSDocInfo());
           }
+          break;
+        default:
           break;
       }
     }

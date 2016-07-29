@@ -109,7 +109,6 @@ import com.google.javascript.jscomp.parsing.parser.trees.ParameterizedTypeTree;
 import com.google.javascript.jscomp.parsing.parser.trees.ParenExpressionTree;
 import com.google.javascript.jscomp.parsing.parser.trees.ParseTree;
 import com.google.javascript.jscomp.parsing.parser.trees.ParseTreeType;
-import com.google.javascript.jscomp.parsing.parser.trees.PostfixExpressionTree;
 import com.google.javascript.jscomp.parsing.parser.trees.ProgramTree;
 import com.google.javascript.jscomp.parsing.parser.trees.PropertyNameAssignmentTree;
 import com.google.javascript.jscomp.parsing.parser.trees.RecordTypeTree;
@@ -131,6 +130,8 @@ import com.google.javascript.jscomp.parsing.parser.trees.TypeQueryTree;
 import com.google.javascript.jscomp.parsing.parser.trees.TypedParameterTree;
 import com.google.javascript.jscomp.parsing.parser.trees.UnaryExpressionTree;
 import com.google.javascript.jscomp.parsing.parser.trees.UnionTypeTree;
+import com.google.javascript.jscomp.parsing.parser.trees.UpdateExpressionTree;
+import com.google.javascript.jscomp.parsing.parser.trees.UpdateExpressionTree.OperatorPosition;
 import com.google.javascript.jscomp.parsing.parser.trees.VariableDeclarationListTree;
 import com.google.javascript.jscomp.parsing.parser.trees.VariableDeclarationTree;
 import com.google.javascript.jscomp.parsing.parser.trees.VariableStatementTree;
@@ -717,7 +718,7 @@ class IRFactory {
       case BINARY_OPERATOR:
       case MEMBER_EXPRESSION:
       case MEMBER_LOOKUP_EXPRESSION:
-      case POSTFIX_EXPRESSION:
+      case UPDATE_EXPRESSION:
         ParseTree nearest = findNearestNode(tree);
         if (nearest.type == ParseTreeType.PAREN_EXPRESSION) {
           return false;
@@ -749,8 +750,8 @@ class IRFactory {
         case MEMBER_LOOKUP_EXPRESSION:
           tree = tree.asMemberLookupExpression().operand;
           continue;
-        case POSTFIX_EXPRESSION:
-          tree = tree.asPostfixExpression().operand;
+        case UPDATE_EXPRESSION:
+          tree = tree.asUpdateExpression().operand;
           continue;
         default:
           return tree;
@@ -1365,6 +1366,10 @@ class IRFactory {
     }
 
     Node processBinaryExpression(BinaryOperatorTree exprNode) {
+      if (exprNode.operator.type == TokenType.STAR_STAR
+          || exprNode.operator.type == TokenType.STAR_STAR_EQUAL) {
+        maybeWarnForFeature(exprNode, Feature.EXPONENT_OP);
+      }
       if (hasPendingCommentBefore(exprNode.right)) {
         return newNode(
             transformBinaryTokenType(exprNode.operator.type),
@@ -1921,25 +1926,20 @@ class IRFactory {
               msg,
               sourceName,
               operand.getLineno(), 0);
-        } else if (type == Token.INC || type == Token.DEC) {
-          return createIncrDecrNode(type, false, operand);
         }
 
         return newNode(type, operand);
       }
     }
 
-    Node processPostfixExpression(PostfixExpressionTree exprNode) {
-      Token type = transformPostfixTokenType(exprNode.operator.type);
-      Node operand = transform(exprNode.operand);
-      if (type == Token.INC || type == Token.DEC) {
-        return createIncrDecrNode(type, true, operand);
-      }
-      Node node = newNode(type, operand);
-      return node;
+    Node processUpdateExpression(UpdateExpressionTree updateExpr) {
+      Token type = transformUpdateTokenType(updateExpr.operator.type);
+      Node operand = transform(updateExpr.operand);
+      return createUpdateNode(
+          type, updateExpr.operatorPosition == OperatorPosition.POSTFIX, operand);
     }
 
-    private Node createIncrDecrNode(Token type, boolean postfix, Node operand) {
+    private Node createUpdateNode(Token type, boolean postfix, Node operand) {
       if (!operand.isValidAssignmentTarget()) {
         errorReporter.error(
             SimpleFormat.format("Invalid %s %s operand.",
@@ -2089,7 +2089,7 @@ class IRFactory {
       for (ParseTree expr : tree.expressions) {
         int count = root.getChildCount();
         if (count < 2) {
-          root.addChildrenToBack(transform(expr));
+          root.addChildToBack(transform(expr));
         } else {
           end = expr.location.end;
           root = newNode(Token.COMMA, root, transform(expr));
@@ -2150,7 +2150,7 @@ class IRFactory {
       Node body = newNode(Token.ENUM_MEMBERS);
       setSourceInfo(body, tree);
       for (ParseTree child : tree.members) {
-        body.addChildrenToBack(transform(child));
+        body.addChildToBack(transform(child));
       }
 
       return newNode(Token.ENUM, name, body);
@@ -2357,7 +2357,7 @@ class IRFactory {
     Node processTypeAlias(TypeAliasTree tree) {
       maybeWarnTypeSyntax(tree, Feature.TYPE_ALIAS);
       Node typeAlias = newStringNode(Token.TYPE_ALIAS, tree.alias.value);
-      typeAlias.addChildrenToFront(transform(tree.original));
+      typeAlias.addChildToFront(transform(tree.original));
       return typeAlias;
     }
 
@@ -2712,8 +2712,8 @@ class IRFactory {
           return processComputedPropertySetter(node.asComputedPropertySetter());
         case RETURN_STATEMENT:
           return processReturnStatement(node.asReturnStatement());
-        case POSTFIX_EXPRESSION:
-          return processPostfixExpression(node.asPostfixExpression());
+        case UPDATE_EXPRESSION:
+          return processUpdateExpression(node.asUpdateExpression());
         case PROGRAM:
           return processAstRoot(node.asProgram());
         case LITERAL_EXPRESSION: // STRING, NUMBER, TRUE, FALSE, NULL, REGEXP
@@ -3136,7 +3136,7 @@ class IRFactory {
     }
   }
 
-  static Token transformPostfixTokenType(TokenType token) {
+  static Token transformUpdateTokenType(TokenType token) {
     switch (token) {
       case PLUS_PLUS:
         return Token.INC;
@@ -3162,11 +3162,6 @@ class IRFactory {
         return Token.DELPROP;
       case TYPEOF:
         return Token.TYPEOF;
-
-      case PLUS_PLUS:
-        return Token.INC;
-      case MINUS_MINUS:
-        return Token.DEC;
 
       case VOID:
         return Token.VOID;
@@ -3212,6 +3207,8 @@ class IRFactory {
         return Token.DIV;
       case PERCENT:
         return Token.MOD;
+      case STAR_STAR:
+        return Token.EXPONENT;
 
       case EQUAL_EQUAL_EQUAL:
         return Token.SHEQ;
@@ -3245,6 +3242,8 @@ class IRFactory {
         return Token.ASSIGN_SUB;
       case STAR_EQUAL:
         return Token.ASSIGN_MUL;
+      case STAR_STAR_EQUAL:
+        return Token.ASSIGN_EXPONENT;
       case SLASH_EQUAL:
         return Token.ASSIGN_DIV;
       case PERCENT_EQUAL:

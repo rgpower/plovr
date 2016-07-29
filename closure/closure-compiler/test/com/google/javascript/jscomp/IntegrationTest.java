@@ -23,7 +23,9 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.javascript.jscomp.CompilerOptions.DisposalCheckingPolicy;
+import com.google.javascript.jscomp.CompilerOptions.J2clPassMode;
 import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
+import com.google.javascript.jscomp.deps.ModuleLoader;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 
@@ -569,7 +571,7 @@ public final class IntegrationTest extends IntegrationTestCase {
           "import {x} from 'i2'; alert(x);",
           "export var x = 5;",
         },
-        ES6ModuleLoader.LOAD_WARNING);
+        ModuleLoader.LOAD_WARNING);
   }
 
   public void testAngularPassOff() {
@@ -692,7 +694,7 @@ public final class IntegrationTest extends IntegrationTestCase {
     options.setCheckTypes(true);
     test(
         options, "/** @type {number} */ var n = window.name;", TypeValidator.TYPE_MISMATCH_WARNING);
-    assertTrue(lastCompiler.getErrorManager().getTypedPercent() > 0.0);
+    assertThat(lastCompiler.getErrorManager().getTypedPercent()).isGreaterThan(0.0);
   }
 
   public void testTypeNameParser() {
@@ -774,6 +776,19 @@ public final class IntegrationTest extends IntegrationTestCase {
             "  /** @constructor */",
             "  var Boolean = function() {};",
             "})();"));
+  }
+
+  public void testNTIConstWarningsOverrideAccessControls() {
+    CompilerOptions options = createCompilerOptions();
+    options.setCheckTypes(true);
+    String js =
+        LINE_JOINER.join(
+            "/** @constructor */ function Foo(name) {}",
+            "/** @const */ Foo.prop = 1;",
+            "Foo.prop = 2;");
+    test(options, js, CheckAccessControls.CONST_PROPERTY_REASSIGNED_VALUE);
+    options.setNewTypeInference(true);
+    test(options, js, NewTypeInference.CONST_PROPERTY_REASSIGNED);
   }
 
   public void testNTInoMaskTypeParseError() {
@@ -1496,8 +1511,7 @@ public final class IntegrationTest extends IntegrationTestCase {
 
     options.setLanguageIn(LanguageMode.ECMASCRIPT6);
     options.setLanguageOut(LanguageMode.ECMASCRIPT5);
-    options.setSmartNameRemoval(true);
-    options.setRemoveDeadCode(true);
+    CompilationLevel.ADVANCED_OPTIMIZATIONS.setOptionsForCompilationLevel(options);
     test(options, code, "");
   }
 
@@ -1748,14 +1762,14 @@ public final class IntegrationTest extends IntegrationTestCase {
     String code = "function f() { var x = 3; x = 5; return x; }";
     testSame(options, code);
 
-    options.setFlowSensitiveInlineVariables(true);
+    options.setInlineVariables(true);
     test(options, code, "function f() { var x = 3; return 5; }");
 
     String unusedVar = "function f() { var x; x = 5; return x; } f()";
-    test(options, unusedVar, "function f() { var x; return 5; } f()");
+    test(options, unusedVar, "(function f() { var x; return 5; })()");
 
     options.setRemoveUnusedVars(true);
-    test(options, unusedVar, "function f() { return 5; } f()");
+    test(options, unusedVar, "(function () { return 5; })()");
   }
 
   public void testFlowSensitiveInlineVariables2() {
@@ -2217,6 +2231,16 @@ public final class IntegrationTest extends IntegrationTestCase {
   }
 
   public void testFoldJ2clClinits() {
+    testFoldJ2clClinits(J2clPassMode.ON);
+  }
+
+  public void testJ2clPassAuto() {
+    inputFileNamePrefix = "jar:file//foo.js.zip!";
+    inputFileNameSuffix = ".java.js";
+    testFoldJ2clClinits(J2clPassMode.AUTO);
+  }
+
+  private void testFoldJ2clClinits(J2clPassMode j2clPassMode) {
     CompilerOptions options = createCompilerOptions();
 
     String code =
@@ -2228,7 +2252,7 @@ public final class IntegrationTest extends IntegrationTestCase {
             "};",
             "InternalWidget.$clinit();");
 
-    options.setJ2clPass(true);
+    options.setJ2clPass(j2clPassMode);
     options.setFoldConstants(true);
     options.setComputeFunctionSideEffects(true);
     options.setCollapseProperties(true);
@@ -2651,7 +2675,6 @@ public final class IntegrationTest extends IntegrationTestCase {
   public void testIssue378() {
     CompilerOptions options = createCompilerOptions();
     options.setInlineVariables(true);
-    options.setFlowSensitiveInlineVariables(true);
     testSame(
         options,
         "function f(c) {var f = c; arguments[0] = this;"
@@ -2664,7 +2687,6 @@ public final class IntegrationTest extends IntegrationTestCase {
         .setOptionsForCompilationLevel(options);
     options.setFoldConstants(true);
     options.setInlineVariables(true);
-    options.setFlowSensitiveInlineVariables(true);
     test(
         options,
         "function f(h) {\n"

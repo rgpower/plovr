@@ -25,6 +25,7 @@ import com.google.javascript.rhino.JSTypeExpression;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 import com.google.javascript.rhino.jstype.JSType;
+
 import java.util.HashSet;
 import java.util.Set;
 
@@ -136,6 +137,13 @@ class ConvertToTypedInterface implements CompilerPass {
       JSTypeExpression expr = NodeUtil.getDeclaredTypeExpression(decl.getNameNode());
       if (expr == null) {
         return null;
+      }
+      if (expr.getRoot().getType() == Token.EQUALS) {
+        expr = new JSTypeExpression(
+            new Node(Token.PIPE,
+                expr.getRoot().getFirstChild().cloneTree(),
+                IR.string("undefined")),
+            "<synthetic>");
       }
       return getTypeJSDoc(oldJSDoc, expr);
     }
@@ -256,7 +264,9 @@ class ConvertToTypedInterface implements CompilerPass {
         case IF:
         case SWITCH:
         case CASE:
-          parent.addChildrenAfter(n.removeChildren().getNext(), n);
+          n.removeFirstChild();
+          Node children = n.removeChildren();
+          parent.addChildrenAfter(children, n);
           n.detachFromParent();
           compiler.reportCodeChange();
           break;
@@ -322,8 +332,8 @@ class ConvertToTypedInterface implements CompilerPass {
       // System.err.println("RHS of " + nameNode + " is " + rhs);
       if (rhs == null
           || rhs.isFunction()
-          || rhs.isQualifiedName() && rhs.matchesQualifiedName("goog.abstractMethod")
-          || rhs.isQualifiedName() && rhs.matchesQualifiedName("goog.nullFunction")
+          || (rhs.isQualifiedName() && rhs.matchesQualifiedName("goog.abstractMethod"))
+          || (rhs.isQualifiedName() && rhs.matchesQualifiedName("goog.nullFunction"))
           || (rhs.isObjectLit()
               && !rhs.hasChildren()
               && (jsdoc == null || !hasAnnotatedType(jsdoc)))) {

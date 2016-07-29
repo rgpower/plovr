@@ -23,7 +23,6 @@ import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.jscomp.NodeTraversal.Callback;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
-
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -82,7 +81,8 @@ public class J2clPass implements CompilerPass {
     }
 
     private boolean isUtilGetDefineMethodName(String fnName) {
-      return fnName != null && fnName.endsWith("Util.$getDefine");
+      // TODO: Switch this to the filename + property name heuristic which is less brittle.
+      return fnName != null && fnName.endsWith(".$getDefine") && fnName.contains("Util");
     }
   }
 
@@ -227,6 +227,10 @@ public class J2clPass implements CompilerPass {
 
   @Override
   public void process(Node externs, Node root) {
+    if (J2clSourceFileChecker.shouldSkipExecution(compiler)) {
+      return;
+    }
+
     /*
      * Re-writes Util.getDefine to make it work for compiled mode.
      */

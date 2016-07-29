@@ -35,7 +35,6 @@ import com.google.javascript.rhino.Token;
 import com.google.javascript.rhino.jstype.FunctionType;
 import com.google.javascript.rhino.jstype.JSType;
 import com.google.javascript.rhino.jstype.JSTypeNative;
-
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -232,7 +231,7 @@ class PureFunctionIdentifier implements CompilerPass {
       }
     } else if (NodeUtil.isFunctionExpression(name)) {
       // The anonymous function reference is also the definition.
-      // TODO(user) Change SimpleDefinitionFinder so it is possible to query for
+      // TODO(user) Change DefinitionUseSiteFinder so it is possible to query for
       // function expressions by function node.
 
       // isExtern is false in the call to the constructor for the
@@ -809,32 +808,35 @@ class PureFunctionIdentifier implements CompilerPass {
    */
   @SuppressWarnings("unused")
   private static boolean isKnownLocalValue(final Node value) {
-    Predicate<Node> taintingPredicate = new Predicate<Node>() {
-      @Override
-      public boolean apply(Node value) {
-        switch (value.getType()) {
-          case ASSIGN:
-            // The assignment might cause an alias, look at the LHS.
+    Predicate<Node> taintingPredicate =
+        new Predicate<Node>() {
+          @Override
+          public boolean apply(Node value) {
+            switch (value.getType()) {
+              case ASSIGN:
+                // The assignment might cause an alias, look at the LHS.
+                return false;
+              case THIS:
+                // TODO(johnlenz): maybe redirect this to be a tainting list for 'this'.
+                return false;
+              case NAME:
+                // TODO(johnlenz): add to local tainting list, if the NAME
+                // is known to be a local.
+                return false;
+              case GETELEM:
+              case GETPROP:
+                // There is no information about the locality of object properties.
+                return false;
+              case CALL:
+                // TODO(johnlenz): add to local tainting list, if the call result
+                // is not known to be a local result.
+                return false;
+              default:
+                break;
+            }
             return false;
-          case THIS:
-            // TODO(johnlenz): maybe redirect this to be a tainting list for 'this'.
-            return false;
-          case NAME:
-            // TODO(johnlenz): add to local tainting list, if the NAME
-            // is known to be a local.
-            return false;
-          case GETELEM:
-          case GETPROP:
-            // There is no information about the locality of object properties.
-            return false;
-          case CALL:
-            // TODO(johnlenz): add to local tainting list, if the call result
-            // is not known to be a local result.
-            return false;
-        }
-        return false;
-      }
-    };
+          }
+        };
 
     return NodeUtil.evaluatesToLocalValue(value, taintingPredicate);
   }
@@ -1211,15 +1213,14 @@ class PureFunctionIdentifier implements CompilerPass {
     private final AbstractCompiler compiler;
     private final String reportPath;
 
-    Driver(AbstractCompiler compiler, String reportPath,
-        boolean useNameReferenceGraph) {
+    Driver(AbstractCompiler compiler, String reportPath) {
       this.compiler = compiler;
       this.reportPath = reportPath;
     }
 
     @Override
     public void process(Node externs, Node root) {
-      SimpleDefinitionFinder defFinder = new SimpleDefinitionFinder(compiler);
+      NameBasedDefinitionProvider defFinder = new NameBasedDefinitionProvider(compiler);
       defFinder.process(externs, root);
 
       PureFunctionIdentifier pureFunctionIdentifier =

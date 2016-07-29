@@ -364,6 +364,8 @@ class PeepholeSubstituteAlternateSyntax
             reportCodeChange();
           }
           break;
+        default:
+          break;
       }
     }
 
@@ -456,9 +458,10 @@ class PeepholeSubstituteAlternateSyntax
           if (action == FoldArrayAction.SAFE_TO_FOLD_WITH_ARGS ||
               action == FoldArrayAction.SAFE_TO_FOLD_WITHOUT_ARGS) {
             newLiteralNode = IR.arraylit();
-            n.removeChildren();
+            n.removeFirstChild(); // discard the function name
+            Node elements = n.removeChildren();
             if (action == FoldArrayAction.SAFE_TO_FOLD_WITH_ARGS) {
-              newLiteralNode.addChildrenToFront(arg0);
+              newLiteralNode.addChildrenToFront(elements);
             }
           }
         }
@@ -595,6 +598,8 @@ class PeepholeSubstituteAlternateSyntax
           n.getParent().replaceChild(n, number);
           reportCodeChange();
           return number;
+        default:
+          break;
       }
 
       Node not = IR.not(IR.number(n.isTrue() ? 0 : 1));

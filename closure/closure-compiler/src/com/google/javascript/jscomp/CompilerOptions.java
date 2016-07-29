@@ -24,11 +24,11 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.Multimap;
+import com.google.javascript.jscomp.deps.ModuleLoader;
 import com.google.javascript.jscomp.parsing.Config;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.SourcePosition;
-
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -147,6 +147,14 @@ public class CompilerOptions {
 
   private boolean useNewTypeInference;
 
+  /**
+   * When this flag is enabled, we run OTI after NTI so that the AST is annotated with the old types
+   * instead of the new and susbsequent passes that use type information continue to get it from
+   * the old types. When disabled, we don't run OTI at all, so the AST stays annotated
+   * with the new types, and that is what subsequent passes use. It should only ever be disabled in
+   * tests that want to verify that a pass works with the new types.
+   * TODO(aravindpg): move this flag into CompilerTestCase in some form.
+   */
   private boolean runOTIAfterNTI = true;
 
   /**
@@ -694,7 +702,7 @@ public class CompilerOptions {
   boolean dartPass;
 
   /** Processes the output of J2CL */
-  boolean j2clPass;
+  J2clPassMode j2clPassMode;
 
   /** Remove goog.abstractMethod assignments. */
   boolean removeAbstractMethods;
@@ -817,7 +825,7 @@ public class CompilerOptions {
   boolean processCommonJSModules = false;
 
   /** CommonJS module prefix. */
-  List<String> moduleRoots = ImmutableList.of(ES6ModuleLoader.DEFAULT_FILENAME_PREFIX);
+  List<String> moduleRoots = ImmutableList.of(ModuleLoader.DEFAULT_FILENAME_PREFIX);
 
   /** Rewrite polyfills. */
   boolean rewritePolyfills = false;
@@ -947,6 +955,11 @@ public class CompilerOptions {
 
   public List<SourceMap.LocationMapping> sourceMapLocationMappings =
       Collections.emptyList();
+
+  /**
+   * Whether to include full file contents in the source map.
+   */
+  boolean sourceMapIncludeSourcesContent = false;
 
   /**
    * Whether to return strings logged with AbstractCompiler#addToDebugLog
@@ -1121,7 +1134,7 @@ public class CompilerOptions {
     angularPass = false;
     polymerPass = false;
     dartPass = false;
-    j2clPass = false;
+    j2clPassMode = J2clPassMode.OFF;
     removeAbstractMethods = true;
     removeClosureAsserts = false;
     stripTypes = Collections.emptySet();
@@ -1590,9 +1603,14 @@ public class CompilerOptions {
     this.dartPass = dartPass;
   }
 
-  public void setJ2clPass(boolean j2clPass) {
-    this.j2clPass = j2clPass;
-    if (j2clPass) {
+  @Deprecated
+  public void setJ2clPass(boolean flag) {
+    setJ2clPass(flag ? J2clPassMode.TRUE : J2clPassMode.FALSE);
+  }
+
+  public void setJ2clPass(J2clPassMode j2clPassMode) {
+    this.j2clPassMode = j2clPassMode;
+    if (j2clPassMode.equals(J2clPassMode.ON) || j2clPassMode.equals(J2clPassMode.TRUE)) {
       setWarningLevel(DiagnosticGroup.forType(SourceFile.DUPLICATE_ZIP_CONTENTS), CheckLevel.OFF);
     }
   }
@@ -2451,17 +2469,18 @@ public class CompilerOptions {
     this.sourceMapOutputPath = sourceMapOutputPath;
   }
 
-  @GwtIncompatible("SourceMap")
+  public void setSourceMapIncludeSourcesContent(boolean sourceMapIncludeSourcesContent) {
+    this.sourceMapIncludeSourcesContent = sourceMapIncludeSourcesContent;
+  }
+
   public void setSourceMapDetailLevel(SourceMap.DetailLevel sourceMapDetailLevel) {
     this.sourceMapDetailLevel = sourceMapDetailLevel;
   }
 
-  @GwtIncompatible("SourceMap")
   public void setSourceMapFormat(SourceMap.Format sourceMapFormat) {
     this.sourceMapFormat = sourceMapFormat;
   }
 
-  @GwtIncompatible("SourceMap")
   public void setSourceMapLocationMappings(
       List<SourceMap.LocationMapping> sourceMapLocationMappings) {
     this.sourceMapLocationMappings = sourceMapLocationMappings;
@@ -2640,7 +2659,7 @@ public class CompilerOptions {
             .add("instrumentationTemplateFile", instrumentationTemplateFile)
             .add("instrumentationTemplate", instrumentationTemplate)
             .add("instrumentForCoverage", instrumentForCoverage)
-            .add("j2clPass", j2clPass)
+            .add("j2clPassMode", j2clPassMode)
             .add("jqueryPass", jqueryPass)
             .add("labelRenaming", labelRenaming)
             .add("languageIn", getLanguageIn())
@@ -3069,5 +3088,26 @@ public class CompilerOptions {
      * only if referenced from an entry point.
      */
     STRICT
+  }
+
+  /**
+   * A mode enum used to indicate whether J2clPass should be enabled, disabled, or enabled
+   * automatically if there is any J2cl source file (i.e. in the AUTO mode).
+   */
+  public static enum J2clPassMode {
+    /** J2clPass is disabled. */
+    FALSE,
+    /** J2clPass is enabled. */
+    TRUE,
+    /** J2clPass is disabled. */
+    OFF,
+    /** J2clPass is enabled. */
+    ON,
+    /** It auto-detects whether there are J2cl generated file. If yes, execute J2clPass. */
+    AUTO;
+
+    boolean shouldAddJ2clPasses() {
+      return this == TRUE || this == ON || this == AUTO;
+    }
   }
 }

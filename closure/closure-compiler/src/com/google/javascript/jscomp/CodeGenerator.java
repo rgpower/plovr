@@ -139,9 +139,9 @@ public class CodeGenerator {
         add("(");
       }
 
-      if (NodeUtil.isAssignmentOp(n) && NodeUtil.isAssignmentOp(last)) {
-        // Assignments are the only right-associative binary operators
-        addExpr(first, p, context);
+      if (NodeUtil.isAssignmentOp(n) || type == Token.EXPONENT) {
+        // Assignment operators and '**' are the only right-associative binary operators
+        addExpr(first, p + 1, context);
         cc.addOp(opstr, true);
         addExpr(last, p, rhsContext);
       } else {
@@ -560,6 +560,8 @@ public class CodeGenerator {
             case MEMBER_VARIABLE_DEF:
               // nothing to do.
               break;
+            default:
+              break;
           }
 
           // The name is on the GET or SET node.
@@ -784,7 +786,7 @@ public class CodeGenerator {
         // then the call must not a FREE_CALL annotation. If it does, then
         // that means it was originally an call without an explicit this and
         // that must be preserved.
-        if (isIndirectEval(first) || n.getBooleanProp(Node.FREE_CALL) && NodeUtil.isGet(first)) {
+        if (isIndirectEval(first) || (n.getBooleanProp(Node.FREE_CALL) && NodeUtil.isGet(first))) {
           add("(0,");
           addExpr(first, NodeUtil.precedence(Token.COMMA), Context.OTHER);
           add(")");
@@ -1082,7 +1084,7 @@ public class CodeGenerator {
         add("`");
         for (Node c = first; c != null; c = c.getNext()) {
           if (c.isString()) {
-            add(strEscape(c.getString(), "'", "\"", "\\", false, false));
+            add(strEscape(c.getString(), "\"", "'", "\\`", "\\", false, false));
           } else {
             // Can't use add() since isWordChar('$') == true and cc would add
             // an extra space.
@@ -1257,6 +1259,7 @@ public class CodeGenerator {
       return false;
     } else if (NodeUtil.isBinaryOperator(parent)
         || NodeUtil.isUnaryOperator(parent)
+        || NodeUtil.isUpdateOperator(parent)
         || parent.isTaggedTemplateLit()
         || parent.isGetProp()) {
       // LeftHandSideExpression OP LeftHandSideExpression
@@ -1530,14 +1533,32 @@ public class CodeGenerator {
   }
 
   private void addExpr(Node n, int minPrecedence, Context context) {
-    if ((NodeUtil.precedence(n.getType()) < minPrecedence) ||
-        ((context == Context.IN_FOR_INIT_CLAUSE) && n.isIn())){
+    if (opRequiresParentheses(n, minPrecedence, context)) {
       add("(");
       add(n, Context.OTHER);
       add(")");
     } else {
       add(n, context);
     }
+  }
+
+  private boolean opRequiresParentheses(Node n, int minPrecedence, Context context) {
+    if (context == Context.IN_FOR_INIT_CLAUSE && n.isIn()) {
+      // make sure this operator 'in' isn't confused with the for-loop 'in'
+      return true;
+    } else if (NodeUtil.isUnaryOperator(n) && isFirstOperandOfExponentiationExpression(n)) {
+      // Unary operators are higher precedence than '**', but
+      // ExponentiationExpression cannot expand to
+      //     UnaryExpression ** ExponentiationExpression
+      return true;
+    } else {
+      return NodeUtil.precedence(n.getType()) < minPrecedence;
+    }
+  }
+
+  private boolean isFirstOperandOfExponentiationExpression(Node n) {
+    Node parent = n.getParent();
+    return parent != null && parent.getType() == Token.EXPONENT && parent.getFirstChild() == n;
   }
 
   void addList(Node firstInList) {
@@ -1677,12 +1698,12 @@ public class CodeGenerator {
       singlequote = "\'";
     }
 
-    return quote + strEscape(s, doublequote, singlequote, "\\\\", useSlashV, false) + quote;
+    return quote + strEscape(s, doublequote, singlequote, "`", "\\\\", useSlashV, false) + quote;
   }
 
   /** Escapes regular expression */
   String regexpEscape(String s) {
-    return '/' + strEscape(s, "\"", "'", "\\", false, true) + '/';
+    return '/' + strEscape(s, "\"", "'", "`", "\\", false, true) + '/';
   }
 
   /** Helper to escape JavaScript string as well as regular expression */
@@ -1690,6 +1711,7 @@ public class CodeGenerator {
       String s,
       String doublequoteEscape,
       String singlequoteEscape,
+      String backtickEscape,
       String backslashEscape,
       boolean useSlashV,
       boolean isRegexp) {
@@ -1714,6 +1736,7 @@ public class CodeGenerator {
         case '\\': sb.append(backslashEscape); break;
         case '\"': sb.append(doublequoteEscape); break;
         case '\'': sb.append(singlequoteEscape); break;
+        case '`': sb.append(backtickEscape); break;
 
         // From LineTerminators (ES5 Section 7.3, Table 3)
         case '\u2028': sb.append("\\u2028"); break;
@@ -1780,8 +1803,8 @@ public class CodeGenerator {
           }
           break;
         default:
-          if (outputCharsetEncoder != null && outputCharsetEncoder.canEncode(c)
-              || c > 0x1f && c < 0x7f) {
+          if ((outputCharsetEncoder != null && outputCharsetEncoder.canEncode(c))
+              || (c > 0x1f && c < 0x7f)) {
             // If we're given an outputCharsetEncoder, then check if the character can be
             // represented in this character set. If no charsetEncoder provided - pass straight
             // Latin characters through, and escape the rest. Doing the explicit character check is

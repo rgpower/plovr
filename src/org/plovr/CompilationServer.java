@@ -217,6 +217,26 @@ public final class CompilationServer implements Runnable {
       host = referrer.getHost();
     }
 
+    // Support reverse proxy
+    String xfor_host  = HttpUtil.getRequestHeader("X-Forwarded-Host"  , exchange);
+    String xfor_proto = HttpUtil.getRequestHeader("X-Forwarded-Proto" , exchange);
+    String xfor_port  = HttpUtil.getRequestHeader("X-Forwarded-Port"  , exchange);
+
+    if(xfor_host instanceof String) {
+      host = xfor_host;
+    }
+
+    if(xfor_proto instanceof String) {
+      scheme = xfor_proto;
+    }
+
+    if(xfor_port instanceof String) {
+      try {
+        port = Integer.parseInt(xfor_port);
+      } catch(NumberFormatException e) {
+      }
+    }
+
     return String.format("%s://%s:%d/", scheme, host, port);
   }
 }

@@ -212,6 +212,8 @@ public final class ClosureCheckModule extends AbstractModuleCallback
           }
         }
         break;
+      default:
+        break;
     }
   }
 
@@ -251,27 +253,33 @@ public final class ClosureCheckModule extends AbstractModuleCallback
     Preconditions.checkState(callNode.isCall());
     switch (parent.getType()) {
       case EXPR_RESULT:
+        checkShortGoogRequireCall(t, callNode, parent);
         return;
       case NAME:
       case DESTRUCTURING_LHS:
         checkShortGoogRequireCall(t, callNode, parent.getParent());
         return;
+      default:
+        break;
     }
     t.report(callNode, REQUIRE_NOT_AT_TOP_LEVEL);
   }
 
   private void checkShortGoogRequireCall(NodeTraversal t, Node callNode, Node declaration) {
-    if (declaration.isLet()) {
-      t.report(declaration, LET_GOOG_REQUIRE);
+    String shortName = null;
+    if (NodeUtil.isNameDeclaration(declaration)) {
+      if (declaration.isLet()) {
+        t.report(declaration, LET_GOOG_REQUIRE);
+      }
+      if (declaration.getChildCount() != 1) {
+        t.report(declaration, ONE_REQUIRE_PER_DECLARATION);
+      }
+      Node lhs = declaration.getFirstChild();
+      if (lhs.isDestructuringLhs() && !isValidDestructuringImport(lhs)) {
+        t.report(declaration, INVALID_DESTRUCTURING_REQUIRE);
+      }
+      shortName = lhs.isName() ? lhs.getString() : null;
     }
-    if (declaration.getChildCount() != 1) {
-      t.report(declaration, ONE_REQUIRE_PER_DECLARATION);
-    }
-    Node lhs = declaration.getFirstChild();
-    if (lhs.isDestructuringLhs() && !isValidDestructuringImport(lhs)) {
-      t.report(declaration, INVALID_DESTRUCTURING_REQUIRE);
-    }
-    String shortName = lhs.isName() ? lhs.getString() : null;
     shortRequiredNamespaces.put(extractFirstArgumentName(callNode), shortName);
   }
 

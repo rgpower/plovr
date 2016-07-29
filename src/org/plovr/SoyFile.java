@@ -15,7 +15,7 @@ import com.google.inject.Injector;
 import com.google.inject.Module;
 import com.google.template.soy.SoyFileSet;
 import com.google.template.soy.SoyModule;
-import com.google.template.soy.base.SoySyntaxException;
+import com.google.template.soy.base.internal.LegacyInternalSyntaxException;
 import com.google.template.soy.jssrc.SoyJsSrcOptions;
 import com.google.template.soy.msgs.SoyMsgBundle;
 
@@ -33,11 +33,13 @@ public class SoyFile extends LocalFileJsInput {
 
   private final Injector injector;
 
+  private final SoyFileOptions soyFileOptions;
   private final SoyJsSrcOptions jsSrcOptions;
 
   SoyFile(String name, File source, SoyFileOptions soyFileOptions) {
     super(name, source);
     this.injector = createInjector(soyFileOptions.pluginModuleNames);
+    this.soyFileOptions = soyFileOptions;
     this.jsSrcOptions = get(soyFileOptions);
   }
 
@@ -48,9 +50,10 @@ public class SoyFile extends LocalFileJsInput {
       value.setShouldGenerateJsdoc(true);
       value.setShouldProvideRequireSoyNamespaces(options.useClosureLibrary);
       value.setShouldDeclareTopLevelNamespaces(options.useClosureLibrary);
-      value.setIsUsingIjData(options.isUsingInjectedData);
-      value.setShouldGenerateGoogMsgDefs(options.useClosureLibrary);
-      value.setUseGoogIsRtlForBidiGlobalDir(options.useClosureLibrary);
+      //value.setIsUsingIjData(options.isUsingInjectedData);
+      value.setShouldProvideBothSoyNamespacesAndJsFunctions(true);
+      //value.setShouldGenerateGoogMsgDefs(options.useClosureLibrary);
+      //value.setUseGoogIsRtlForBidiGlobalDir(options.useClosureLibrary);
 
       jsSrcOptionsMap.put(options, value);
     }
@@ -63,12 +66,12 @@ public class SoyFile extends LocalFileJsInput {
     SoyFileSet.Builder builder = injector.getInstance(SoyFileSet.Builder.class);
     builder.add(getSource());
     SoyFileSet fileSet = builder.build();
-    final SoyMsgBundle msgBundle = null;
+    final SoyMsgBundle msgBundle = this.soyFileOptions.soyMsgBundle;
     try {
       String code = fileSet.compileToJsSrc(jsSrcOptions, msgBundle).get(0);
       logger.fine(code);
       return code;
-    } catch (SoySyntaxException e) {
+    } catch (LegacyInternalSyntaxException e) {
       throw new PlovrSoySyntaxException(e, this);
     }
   }

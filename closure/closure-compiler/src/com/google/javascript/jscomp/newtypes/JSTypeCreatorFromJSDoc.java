@@ -72,13 +72,6 @@ public final class JSTypeCreatorFromJSDoc {
           "JSC_NTI_IMPLEMENTS_WITHOUT_CONSTRUCTOR",
           "@implements used without @constructor or @interface for {0}");
 
-  // Not part of ALL_DIAGNOSTICS because it should not be enabled with
-  // --jscomp_error=newCheckTypes. It should only be enabled explicitly.
-  public static final DiagnosticType CONFLICTING_SHAPE_TYPE =
-      DiagnosticType.disabled(
-          "JSC_NTI_CONFLICTING_SHAPE_TYPE",
-          "{1} cannot extend this type; {0}s can only extend {0}s");
-
   public static final DiagnosticType CONFLICTING_EXTENDED_TYPE =
       DiagnosticType.warning(
           "JSC_NTI_CONFLICTING_EXTENDED_TYPE",
@@ -104,7 +97,7 @@ public final class JSTypeCreatorFromJSDoc {
   public static final DiagnosticType BAD_ARRAY_TYPE_SYNTAX =
     DiagnosticType.warning(
         "JSC_NTI_BAD_ARRAY_TYPE_SYNTAX",
-        "The [] type syntax is not supported. Please use Array.<T> instead");
+        "The [] type syntax is not supported. Please use Array<T> instead");
 
   public static final DiagnosticType CANNOT_MAKE_TYPEVAR_NON_NULL =
     DiagnosticType.warning(
@@ -167,29 +160,33 @@ public final class JSTypeCreatorFromJSDoc {
         "JSC_NTI_TWO_JSDOCS",
         "Found two JsDoc comments for {0}");
 
-  public static final DiagnosticGroup ALL_DIAGNOSTICS = new DiagnosticGroup(
+  public static final DiagnosticGroup COMPATIBLE_DIAGNOSTICS = new DiagnosticGroup(
       BAD_ARRAY_TYPE_SYNTAX,
-      CANNOT_MAKE_TYPEVAR_NON_NULL,
       CIRCULAR_TYPEDEF_ENUM,
       CONFLICTING_EXTENDED_TYPE,
       CONFLICTING_IMPLEMENTED_TYPE,
+      EXTENDS_NON_INTERFACE,
+      EXTENDS_NON_OBJECT,
+      EXTENDS_NOT_ON_CTOR_OR_INTERF,
+      IMPLEMENTS_NON_INTERFACE,
+      IMPLEMENTS_WITHOUT_CONSTRUCTOR,
+      INHERITANCE_CYCLE,
+      NEW_EXPECTS_OBJECT_OR_TYPEVAR,
+      TEMPLATED_GETTER_SETTER,
+      TWO_JSDOCS,
+      WRONG_PARAMETER_ORDER);
+
+  // TODO(dimvar): Check for which of these warnings it makes sense to keep
+  // going after warning.
+  public static final DiagnosticGroup NEW_DIAGNOSTICS = new DiagnosticGroup(
+      CANNOT_MAKE_TYPEVAR_NON_NULL,
       DICT_IMPLEMENTS_INTERF,
       ENUM_IS_TOP,
       ENUM_IS_UNION,
       ENUM_WITH_TYPEVARS,
-      EXTENDS_NON_INTERFACE,
-      EXTENDS_NON_OBJECT,
-      EXTENDS_NOT_ON_CTOR_OR_INTERF,
       FUNCTION_WITH_NONFUNC_JSDOC,
-      IMPLEMENTS_NON_INTERFACE,
-      IMPLEMENTS_WITHOUT_CONSTRUCTOR,
-      INHERITANCE_CYCLE,
       INVALID_GENERICS_INSTANTIATION,
-      NEW_EXPECTS_OBJECT_OR_TYPEVAR,
-      TEMPLATED_GETTER_SETTER,
-      TWO_JSDOCS,
-      UNION_IS_UNINHABITABLE,
-      WRONG_PARAMETER_ORDER);
+      UNION_IS_UNINHABITABLE);
 
   private final CodingConvention convention;
   private final UniqueNameGenerator nameGen;
@@ -986,18 +983,8 @@ public final class JSTypeCreatorFromJSDoc {
     if (parentClass == null && !functionName.equals("Object")) {
       parentClass = builtinObject;
     }
-    if (parentClass != null) {
-      if (!constructorType.addSuperClass(parentClass)) {
-        warnings.add(JSError.make(funNode, INHERITANCE_CYCLE, className));
-      } else if (parentClass != builtinObject) {
-        if (constructorType.isStruct() && !parentClass.isStruct()) {
-          warnings.add(JSError.make(
-              funNode, CONFLICTING_SHAPE_TYPE, "struct", className));
-        } else if (constructorType.isDict() && !parentClass.isDict()) {
-          warnings.add(JSError.make(
-              funNode, CONFLICTING_SHAPE_TYPE, "dict", className));
-        }
-      }
+    if (parentClass != null && !constructorType.addSuperClass(parentClass)) {
+      warnings.add(JSError.make(funNode, INHERITANCE_CYCLE, className));
     }
     if (constructorType.isDict() && !implementedIntfs.isEmpty()) {
       warnings.add(JSError.make(funNode, DICT_IMPLEMENTS_INTERF, className));
@@ -1064,6 +1051,8 @@ public final class JSTypeCreatorFromJSDoc {
       case ELLIPSIS:
         p = ParameterKind.REST;
         jsdoc = jsdoc.getFirstChild();
+        break;
+      default:
         break;
     }
     JSType t = getMaybeTypeFromComment(jsdoc, registry, typeParameters);

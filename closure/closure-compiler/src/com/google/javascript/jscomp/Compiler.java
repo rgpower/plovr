@@ -29,6 +29,7 @@ import com.google.debugging.sourcemap.proto.Mapping.OriginalMapping;
 import com.google.javascript.jscomp.CompilerOptions.DevMode;
 import com.google.javascript.jscomp.ReferenceCollectingCallback.ReferenceCollection;
 import com.google.javascript.jscomp.TypeValidator.TypeMismatch;
+import com.google.javascript.jscomp.deps.ModuleLoader;
 import com.google.javascript.jscomp.deps.SortedDependencies.MissingProvideException;
 import com.google.javascript.jscomp.parsing.Config;
 import com.google.javascript.jscomp.parsing.ParserRunner;
@@ -80,7 +81,7 @@ import java.util.regex.Matcher;
  * window, document.
  *
  */
-public class Compiler extends AbstractCompiler {
+public class Compiler extends AbstractCompiler implements ErrorHandler {
   static final String SINGLETON_MODULE_NAME = "$singleton$";
 
   static final DiagnosticType MODULE_DEPENDENCY_ERROR =
@@ -118,6 +119,9 @@ public class Compiler extends AbstractCompiler {
   // The graph of the JS source modules. Must be null if there are less than
   // 2 modules, because we use this as a signal for which passes to run.
   private JSModuleGraph moduleGraph;
+
+  // The module loader for resolving paths into module URIs.
+  private ModuleLoader moduleLoader;
 
   // The JS source inputs
   private List<CompilerInput> inputs;
@@ -206,7 +210,7 @@ public class Compiler extends AbstractCompiler {
   public PerformanceTracker tracker;
 
   // Used by optimize-returns, optimize-parameters and remove-unused-variables
-  private SimpleDefinitionFinder defFinder = null;
+  private DefinitionUseSiteFinder defFinder = null;
 
   // For use by the new type inference
   private GlobalTypeInfo symbolTable;
@@ -367,6 +371,9 @@ public class Compiler extends AbstractCompiler {
     // But we do not want to see the warnings from OTI.
     if (options.getNewTypeInference() && options.getRunOTIAfterNTI()) {
       options.checkTypes = true;
+      // Supress warnings from the const checks of CheckAccessControls so as to avoid
+      // duplication.
+      options.setWarningLevel(DiagnosticGroups.ACCESS_CONTROLS_CONST, CheckLevel.OFF);
       if (!options.reportOTIErrorsUnderNTI) {
         options.setWarningLevel(
             DiagnosticGroups.OLD_CHECK_TYPES,
@@ -423,6 +430,7 @@ public class Compiler extends AbstractCompiler {
     List<JSModule> modules = new ArrayList<>(1);
     modules.add(module);
     initModules(externs, modules, options);
+    addFilesToSourceMap(inputs);
 
     if (options.printConfig) {
       printConfig(System.err);
@@ -1341,12 +1349,12 @@ public class Compiler extends AbstractCompiler {
   }
 
   @Override
-  SimpleDefinitionFinder getSimpleDefinitionFinder() {
+  DefinitionUseSiteFinder getDefinitionFinder() {
     return this.defFinder;
   }
 
   @Override
-  void setSimpleDefinitionFinder(SimpleDefinitionFinder defFinder) {
+  void setDefinitionFinder(DefinitionUseSiteFinder defFinder) {
     this.defFinder = defFinder;
   }
 
@@ -1386,18 +1394,20 @@ public class Compiler extends AbstractCompiler {
         externsRoot.addChildToBack(n);
       }
 
-      if (options.lowerFromEs6()) {
-        processEs6Modules();
-      }
-
-      // Modules inferred in ProcessCommonJS pass.
-      if (options.transformAMDToCJSModules || options.processCommonJSModules) {
-        processAMDAndCommonJSModules();
-      }
-
       if (options.lowerFromEs6()
           || options.transformAMDToCJSModules
           || options.processCommonJSModules) {
+
+        this.moduleLoader = new ModuleLoader(this, options.moduleRoots, inputs);
+
+        if (options.lowerFromEs6()) {
+          processEs6Modules();
+        }
+
+        // Modules inferred in ProcessCommonJS pass.
+        if (options.transformAMDToCJSModules || options.processCommonJSModules) {
+          processAMDAndCommonJSModules();
+        }
 
         // Build a map of module identifiers for any input which provides no namespace.
         // These files could be imported modules which have no exports, but do have side effects.
@@ -1426,6 +1436,9 @@ public class Compiler extends AbstractCompiler {
         if (!inputsToRewrite.isEmpty()) {
           processEs6Modules(new ArrayList<>(inputsToRewrite.values()), true);
         }
+      } else {
+        // Use an empty module loader if we're not actually dealing with modules.
+        this.moduleLoader = ModuleLoader.EMPTY;
       }
 
       orderInputs();
@@ -1603,14 +1616,13 @@ public class Compiler extends AbstractCompiler {
   }
 
   void processEs6Modules(List<CompilerInput> inputsToProcess, boolean forceRewrite) {
-    ES6ModuleLoader loader = new ES6ModuleLoader(this, options.moduleRoots, inputs);
     for (CompilerInput input : inputsToProcess) {
       input.setCompiler(this);
       Node root = input.getAstRoot(this);
       if (root == null) {
         continue;
       }
-      new ProcessEs6Modules(this, loader, true).processFile(root, forceRewrite);
+      new ProcessEs6Modules(this).processFile(root, forceRewrite);
     }
   }
 
@@ -1620,7 +1632,6 @@ public class Compiler extends AbstractCompiler {
    * on the way.
    */
   void processAMDAndCommonJSModules() {
-    ES6ModuleLoader loader = new ES6ModuleLoader(this, options.moduleRoots, inputs);
     for (CompilerInput input : inputs) {
       input.setCompiler(this);
       Node root = input.getAstRoot(this);
@@ -1631,7 +1642,7 @@ public class Compiler extends AbstractCompiler {
         new TransformAMDToCJSModule(this).process(null, root);
       }
       if (options.processCommonJSModules) {
-        ProcessCommonJSModules cjs = new ProcessCommonJSModules(this, loader, true);
+        ProcessCommonJSModules cjs = new ProcessCommonJSModules(this, true);
         cjs.process(null, root);
       }
     }
@@ -1647,8 +1658,9 @@ public class Compiler extends AbstractCompiler {
 
   @Override
   Node parseSyntheticCode(String js) {
-    CompilerInput input = new CompilerInput(
-        SourceFile.fromCode(" [synthetic:" + (++syntheticCodeId) + "] ", js));
+    SourceFile source = SourceFile.fromCode(" [synthetic:" + (++syntheticCodeId) + "] ", js);
+    addFilesToSourceMap(ImmutableList.of(source));
+    CompilerInput input = new CompilerInput(source);
     putCompilerInput(input.getInputId(), input);
     return input.getAstRoot(this);
   }
@@ -1671,6 +1683,7 @@ public class Compiler extends AbstractCompiler {
   @Override
   Node parseSyntheticCode(String fileName, String js) {
     initCompilerOptionsIfTesting();
+    addFileToSourceMap(fileName, js);
     CompilerInput input = new CompilerInput(SourceFile.fromCode(fileName, js));
     putCompilerInput(input.getInputId(), input);
     return input.getAstRoot(this);
@@ -2231,6 +2244,11 @@ public class Compiler extends AbstractCompiler {
   }
 
   @Override
+  public void report(CheckLevel ignoredLevel, JSError error) {
+    report(error);
+  }
+
+  @Override
   public CheckLevel getErrorLevel(JSError error) {
     Preconditions.checkNotNull(options);
     return warningsGuard.level(error);
@@ -2673,12 +2691,12 @@ public class Compiler extends AbstractCompiler {
     }
 
     // Insert the code immediately after the last-inserted runtime library.
+    Node lastChild = ast.getLastChild();
     Node firstChild = ast.removeChildren();
     if (firstChild == null) {
       // Handle require-only libraries.
       return lastInjectedLibrary;
     }
-    Node lastChild = firstChild.getLastSibling();
     Node parent = getNodeForCodeInsertion(null);
     if (lastInjectedLibrary == null) {
       parent.addChildrenToFront(firstChild);
@@ -2732,5 +2750,24 @@ public class Compiler extends AbstractCompiler {
   @Override
   ImmutableMap<String, Node> getDefaultDefineValues() {
     return this.defaultDefineValues;
+  }
+
+  @Override
+  ModuleLoader getModuleLoader() {
+    return moduleLoader;
+  }
+
+  private void addFilesToSourceMap(Iterable<? extends SourceFile> files) {
+    if (getOptions().sourceMapIncludeSourcesContent && getSourceMap() != null) {
+      for (SourceFile file : files) {
+        getSourceMap().addSourceFile(file);
+      }
+    }
+  }
+
+  private void addFileToSourceMap(String filename, String contents) {
+    if (getOptions().sourceMapIncludeSourcesContent && getSourceMap() != null) {
+      getSourceMap().addSourceFile(SourceFile.fromCode(filename, contents));
+    }
   }
 }

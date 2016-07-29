@@ -25,14 +25,12 @@ import com.google.javascript.rhino.JSDocInfoBuilder;
 import com.google.javascript.rhino.JSTypeExpression;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-
 import javax.annotation.Nullable;
 
 /**
@@ -188,6 +186,14 @@ public final class Es6ToEs3Converter implements NodeTraversal.Callback, HotSwapC
           Es6TemplateLiterals.visitTemplateLiteral(t, n);
         }
         break;
+      case EXPONENT:
+        visitExponentiationExpression(n, parent);
+        break;
+      case ASSIGN_EXPONENT:
+        visitExponentiationAssignmentExpression(n, parent);
+        break;
+      default:
+        break;
     }
   }
 
@@ -210,6 +216,25 @@ public final class Es6ToEs3Converter implements NodeTraversal.Callback, HotSwapC
     Node statement = NodeUtil.getEnclosingStatement(n);
     Node initSymbol = IR.exprResult(IR.call(NodeUtil.newQName(compiler, "$jscomp.initSymbol")));
     statement.getParent().addChildBefore(initSymbol.useSourceInfoFromForTree(statement), statement);
+    compiler.reportCodeChange();
+  }
+
+  private void visitExponentiationExpression(Node n, Node parent) {
+    Node left = n.removeFirstChild();
+    Node right = n.removeFirstChild();
+    Node mathDotPowCall =
+        IR.call(NodeUtil.newQName(compiler, "Math.pow"), left, right)
+            .useSourceInfoIfMissingFromForTree(n);
+    parent.replaceChild(n, mathDotPowCall);
+    compiler.reportCodeChange();
+  }
+
+  private void visitExponentiationAssignmentExpression(Node n, Node parent) {
+    Node left = n.removeFirstChild();
+    Node right = n.removeFirstChild();
+    Node mathDotPowCall = IR.call(NodeUtil.newQName(compiler, "Math.pow"), left.cloneTree(), right);
+    Node assign = IR.assign(left, mathDotPowCall).useSourceInfoIfMissingFromForTree(n);
+    parent.replaceChild(n, assign);
     compiler.reportCodeChange();
   }
 
@@ -242,6 +267,7 @@ public final class Es6ToEs3Converter implements NodeTraversal.Callback, HotSwapC
   /**
    * Converts extended object literal {a} to {a:a}.
    */
+  // TODO(blickly): Separate this so it can be part of the normalization early transpilation passes.
   private void visitStringKey(Node n) {
     if (!n.hasChildren()) {
       Node name = IR.name(n.getString());
@@ -315,7 +341,7 @@ public final class Es6ToEs3Converter implements NodeTraversal.Callback, HotSwapC
    * Processes a rest parameter
    */
   private void visitRestParam(Node restParam, Node paramList) {
-    Node functionBody = paramList.getLastSibling();
+    Node functionBody = paramList.getNext();
     int restIndex = paramList.getIndexOfChild(restParam);
     String paramName = restParam.getFirstChild().getString();
 
@@ -589,10 +615,11 @@ public final class Es6ToEs3Converter implements NodeTraversal.Callback, HotSwapC
     }
 
     if (metadata.definePropertiesObjForPrototype.hasChildren()) {
+      compiler.ensureLibraryInjected("util/global", false);
       Node definePropsCall =
           IR.exprResult(
               IR.call(
-                  NodeUtil.newQName(compiler, "Object.defineProperties"),
+                  NodeUtil.newQName(compiler, "$jscomp.global.Object.defineProperties"),
                   NodeUtil.newQName(compiler, metadata.fullClassName + ".prototype"),
                   metadata.definePropertiesObjForPrototype));
       definePropsCall.useSourceInfoIfMissingFromForTree(classNode);
@@ -602,10 +629,11 @@ public final class Es6ToEs3Converter implements NodeTraversal.Callback, HotSwapC
     }
 
     if (metadata.definePropertiesObjForClass.hasChildren()) {
+      compiler.ensureLibraryInjected("util/global", false);
       Node definePropsCall =
           IR.exprResult(
               IR.call(
-                  NodeUtil.newQName(compiler, "Object.defineProperties"),
+                  NodeUtil.newQName(compiler, "$jscomp.global.Object.defineProperties"),
                   NodeUtil.newQName(compiler, metadata.fullClassName),
                   metadata.definePropertiesObjForClass));
       definePropsCall.useSourceInfoIfMissingFromForTree(classNode);

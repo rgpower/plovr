@@ -24,6 +24,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.javascript.jscomp.NodeUtil;
 import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.Node;
+
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
@@ -37,9 +38,6 @@ import java.util.Set;
  * @author dimvar@google.com (Dimitris Vardoulakis)
  */
 public final class RawNominalType extends Namespace {
-  // The node (if any) that defines the type. Most times it's a function, in
-  // rare cases it's a call node.
-  private final Node defSite;
   // If true, we can't add more properties to this type.
   private boolean isFinalized;
   // Each instance of the class has these properties by default
@@ -81,7 +79,7 @@ public final class RawNominalType extends Namespace {
   private RawNominalType(
       JSTypes commonTypes, Node defSite,
       String name, ImmutableList<String> typeParameters, Kind kind, ObjectKind objectKind) {
-    super(commonTypes, name);
+    super(commonTypes, name, defSite);
     Preconditions.checkNotNull(objectKind);
     Preconditions.checkState(
         defSite == null || defSite.isFunction() || defSite.isCall(),
@@ -90,7 +88,6 @@ public final class RawNominalType extends Namespace {
     if (typeParameters == null) {
       typeParameters = ImmutableList.of();
     }
-    this.defSite = defSite;
     this.typeParameters = typeParameters;
     // NTI considers IObject to be a record so that, eg, an object literal can
     // be considered to have any IObject type.
@@ -145,10 +142,6 @@ public final class RawNominalType extends Namespace {
     // interfaces are struct by default
     return new RawNominalType(commonTypes, defSite,
         name, typeParameters, Kind.RECORD, ObjectKind.STRUCT);
-  }
-
-  public Node getDefSite() {
-    return this.defSite;
   }
 
   private static boolean isBuiltinHelper(
@@ -296,7 +289,7 @@ public final class RawNominalType extends Namespace {
     return this.interfaces == null ? ImmutableSet.<NominalType>of() : this.interfaces;
   }
 
-  private Property getOwnProp(String pname) {
+  Property getOwnProp(String pname) {
     Property p = classProps.get(pname);
     if (p != null) {
       return p;
@@ -484,6 +477,11 @@ public final class RawNominalType extends Namespace {
       this.randomProps = this.randomProps.without(pname);
     }
     Property newProp;
+    // If this property already exists and has a defsite, and the defsite we
+    // currently have is null, then keep the old defsite.
+    if (defSite == null && this.protoProps.containsKey(pname)) {
+      defSite = this.protoProps.get(pname).getDefSite();
+    }
     if (isConstant) {
       newProp = Property.makeConstant(defSite, type, type);
     } else if (isStructuralInterface() && type != null
@@ -550,6 +548,18 @@ public final class RawNominalType extends Namespace {
           this.protoProps = this.protoProps.with(
               entry.getKey(), Property.makeWithDefsite(
                   prop.getDefSite(), JSType.UNKNOWN, JSType.UNKNOWN));
+        }
+      }
+    }
+    // Remove random property definitions if a supertype defines these properties
+    for (String pname : this.randomProps.keySet()) {
+      if (this.superclass != null && this.superclass.mayHaveProp(pname)) {
+        this.randomProps = this.randomProps.without(pname);
+        continue;
+      }
+      for (NominalType interf : this.interfaces) {
+        if (interf.mayHaveProp(pname)) {
+          this.randomProps = this.randomProps.without(pname);
         }
       }
     }

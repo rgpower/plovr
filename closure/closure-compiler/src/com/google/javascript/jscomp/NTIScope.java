@@ -355,6 +355,9 @@ final class NTIScope implements DeclaredTypeRegistry {
       }
       NTIScope funScope = (NTIScope) decl.getFunctionScope();
       if (funScope != null) {
+        Preconditions.checkNotNull(
+            funScope.getDeclaredFunctionType(),
+            "decl=%s, funScope=%s", decl, funScope);
         return getCommonTypes().fromFunctionType(
             funScope.getDeclaredFunctionType().toFunctionType());
       }
@@ -484,20 +487,20 @@ final class NTIScope implements DeclaredTypeRegistry {
       Preconditions.checkState(!this.localNamespaces.containsKey(varName));
       NTIScope s = Preconditions.checkNotNull(this.localFunDefs.get(varName));
       this.localNamespaces.put(varName,
-          new FunctionNamespace(getCommonTypes(), varName, s));
+          new FunctionNamespace(getCommonTypes(), varName, s, qnameNode));
     } else {
       Preconditions.checkArgument(!isNamespace(qnameNode));
       QualifiedName qname = QualifiedName.fromNode(qnameNode);
       Namespace ns = getNamespace(qname.getLeftmostName());
       NTIScope s = (NTIScope) ns.getDeclaration(qname).getFunctionScope();
       ns.addNamespace(qname.getAllButLeftmost(),
-          new FunctionNamespace(getCommonTypes(), qname.toString(), s));
+          new FunctionNamespace(getCommonTypes(), qname.toString(), s, qnameNode));
     }
   }
 
   void addNamespaceLit(Node qnameNode) {
     addNamespace(qnameNode,
-        new NamespaceLit(getCommonTypes(), qnameNode.getQualifiedName()));
+        new NamespaceLit(getCommonTypes(), qnameNode.getQualifiedName(), qnameNode));
   }
 
   void updateType(String name, JSType newDeclType) {
@@ -632,8 +635,11 @@ final class NTIScope implements DeclaredTypeRegistry {
   public JSType getType(String typeName) {
     Preconditions.checkNotNull(
         preservedNamespaces, "Failed to preserve namespaces post-finalization");
-    RawNominalType nominalType = (RawNominalType) preservedNamespaces.get(typeName);
-    return nominalType == null ? null : nominalType.getInstanceAsJSType();
+    Namespace ns = preservedNamespaces.get(typeName);
+    if (ns instanceof RawNominalType) {
+      return ((RawNominalType) ns).getInstanceAsJSType();
+    }
+    return null;
   }
 
   void resolveTypedefs(JSTypeCreatorFromJSDoc typeParser) {
