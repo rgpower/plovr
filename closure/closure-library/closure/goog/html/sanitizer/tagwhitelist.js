@@ -21,8 +21,8 @@ goog.provide('goog.html.sanitizer.TagWhitelist');
 
 
 /**
- * A tag whitelist for allowed tags.
- * @dict {boolean}
+ * A tag whitelist for allowed tags. Tag names must be in all caps.
+ * @const @dict {boolean}
  */
 goog.html.sanitizer.TagWhitelist = {
   'A': true,           // HTMLAnchorElement

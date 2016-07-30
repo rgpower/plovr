@@ -16,33 +16,49 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.javascript.rhino.dtoa.DToA.numberToString;
+
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
- * <p>Compiler pass that converts all calls to:
- *   goog.object.create(key1, val1, key2, val2, ...) where all of the keys
- *   are literals into object literals.</p>
+ * Compiler pass that converts primitive calls:
+ *
+ * <p>Converts goog.object.create(key1, val1, key2, val2, ...) where all of the keys are literals
+ * into object literals.
+ *
+ * <p>Converts goog.object.createSet(key1, key2, ...) into an object literal with the given keys,
+ * where all the values are {@code true}.
+ *
+ * <p>Converts goog.reflect.objectProperty(propName, object) to JSCompiler_renameProperty
  *
  * @author agrieve@google.com (Andrew Grieve)
  */
 final class ClosureOptimizePrimitives implements CompilerPass {
+  static final DiagnosticType DUPLICATE_SET_MEMBER =
+      DiagnosticType.warning("JSC_DUPLICATE_SET_MEMBER", "Found duplicate value ''{0}'' in set");
 
   /** Reference to the JS compiler */
   private final AbstractCompiler compiler;
 
   /**
-   * Identifies all calls to goog.object.create.
+   * Identifies all calls to closure primitive functions
    */
-  private class FindObjectCreateCalls extends AbstractPostOrderCallback {
+  private class FindPrimitives extends AbstractPostOrderCallback {
 
     @Override
     public void visit(NodeTraversal t, Node n, Node parent) {
       if (n.isCall()) {
         Node fn = n.getFirstChild();
-        if (fn.matchesQualifiedName("goog$object$create")
+        if (compiler
+            .getCodingConvention()
+            .isPropertyRenameFunction(fn.getOriginalQualifiedName())) {
+          processRenamePropertyCall(n);
+        } else if (fn.matchesQualifiedName("goog$object$create")
             || fn.matchesQualifiedName("goog.object.create")) {
           processObjectCreateCall(n);
         } else if (fn.matchesQualifiedName("goog$object$createSet")
@@ -50,6 +66,7 @@ final class ClosureOptimizePrimitives implements CompilerPass {
           processObjectCreateSetCall(n);
         }
       }
+      maybeProcessDomTagName(n);
     }
   }
 
@@ -62,7 +79,7 @@ final class ClosureOptimizePrimitives implements CompilerPass {
 
   @Override
   public void process(Node externs, Node root) {
-    FindObjectCreateCalls pass = new FindObjectCreateCalls();
+    FindPrimitives pass = new FindPrimitives();
     NodeTraversal.traverseEs6(compiler, root, pass);
   }
 
@@ -93,6 +110,24 @@ final class ClosureOptimizePrimitives implements CompilerPass {
       callNode.getParent().replaceChild(callNode, objNode);
       compiler.reportCodeChange();
     }
+  }
+
+  /**
+   * Converts all of the given call nodes to object literals that are safe to
+   * do so.
+   */
+  private void processRenamePropertyCall(Node callNode) {
+    Node nameNode = callNode.getFirstChild();
+    if (nameNode.matchesQualifiedName(NodeUtil.JSC_PROPERTY_NAME_FN)) {
+      return;
+    }
+
+    Node newTarget = IR.name(NodeUtil.JSC_PROPERTY_NAME_FN).copyInformationFrom(nameNode);
+    newTarget.setOriginalName(nameNode.getOriginalQualifiedName());
+
+    callNode.replaceChild(nameNode, newTarget);
+    callNode.putBooleanProp(Node.FREE_CALL, true);
+    compiler.reportCodeChange();
   }
 
   /**
@@ -146,18 +181,50 @@ final class ClosureOptimizePrimitives implements CompilerPass {
   }
 
   /**
-   * Returns whether the given call to goog.object.create can be converted to an
-   * object literal.
+   * Returns whether the given call to goog.object.createSet can be converted to an object literal.
    */
-  private static boolean canOptimizeObjectCreateSet(Node firstParam) {
+  private boolean canOptimizeObjectCreateSet(Node firstParam) {
     Node curParam = firstParam;
+    Set<String> keys = new HashSet<>();
     while (curParam != null) {
-      // All keys must be strings or numbers.
+      // All keys must be strings or numbers, otherwise we can't optimize the call.
       if (!curParam.isString() && !curParam.isNumber()) {
+        return false;
+      }
+      String key =
+          curParam.isString() ? curParam.getString() : numberToString(curParam.getDouble());
+      if (!keys.add(key)) {
+        compiler.report(JSError.make(firstParam.getPrevious(), DUPLICATE_SET_MEMBER, key));
         return false;
       }
       curParam = curParam.getNext();
     }
     return true;
+  }
+
+  /**
+   * Converts the given node to string if it is safe to do so.
+   */
+  private void maybeProcessDomTagName(Node n) {
+    String qualifiedName = n.getQualifiedName();
+    if (qualifiedName == null) {
+      return;
+    }
+    if (NodeUtil.isLValue(n)) {
+      return;
+    }
+    String prefix = "goog.dom.TagName.";
+    String altPrefix = "goog$dom$TagName$";
+    String tagName;
+    if (qualifiedName.startsWith(prefix)) {
+      tagName = qualifiedName.substring(prefix.length());
+    } else if (qualifiedName.startsWith(altPrefix)) {
+      tagName = qualifiedName.substring(altPrefix.length());
+    } else {
+      return;
+    }
+    Node stringNode = Node.newString(tagName).srcref(n);
+    n.getParent().replaceChild(n, stringNode);
+    compiler.reportCodeChange();
   }
 }

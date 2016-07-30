@@ -20,7 +20,6 @@ import com.google.common.base.Strings;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.jscomp.NodeTraversal.Callback;
 import com.google.javascript.rhino.Node;
-
 import java.util.HashSet;
 import java.util.Set;
 
@@ -37,7 +36,12 @@ public class J2clClinitPrunerPass implements CompilerPass {
 
   @Override
   public void process(Node externs, Node root) {
+    if (J2clSourceFileChecker.shouldSkipExecution(compiler)) {
+      return;
+    }
+
     NodeTraversal.traverseEs6(compiler, root, new RedundantClinitPruner());
+    NodeTraversal.traverseEs6(compiler, root, new LookAheadRedundantClinitPruner());
     NodeTraversal.traverseEs6(compiler, root, new EmptyClinitPruner());
   }
 
@@ -103,8 +107,119 @@ public class J2clClinitPrunerPass implements CompilerPass {
     }
   }
 
+  // TODO(michaelthomas): Prune clinit calls in functions, if previous functions or the immediate
+  // next function guarantees clinit call. With that we won't need this pass.
   /**
-   * A traversal callback that removes the boy of empty clinits.
+   * Prunes clinit calls which immediately precede calls to a static function which calls the same
+   * clinit. e.g. "Foo.clinit(); return new Foo()" -> "return new Foo()"
+   */
+  private static final class LookAheadRedundantClinitPruner extends AbstractPostOrderCallback {
+
+    @Override
+    public void visit(NodeTraversal t, Node node, Node parent) {
+      if (!node.isExprResult()) {
+        return;
+      }
+
+      // Find clinit calls.
+      String clinitName =
+          node.getFirstChild().isCall() ? getClinitMethodName(node.getFirstFirstChild()) : null;
+      if (clinitName == null) {
+        return;
+      }
+
+      // Check for calls to a static method immediately following the clinit call.
+      Node callOrNewNode = getCallOrNewNode(node.getNext());
+      if (callOrNewNode == null || !callOrNewNode.getFirstChild().isName()) {
+        return;
+      }
+
+      // Check that the call isn't a recursive call to the same function.
+      Node enclosingFunction = NodeUtil.getEnclosingFunction(node);
+      if (enclosingFunction == null || callOrNewNode.getFirstChild().getString()
+          .equals(NodeUtil.getNearestFunctionName(enclosingFunction))) {
+        return;
+      }
+
+      // Find the definition of the function being called.
+      Var var = t.getScope().getVar(callOrNewNode.getFirstChild().getString());
+      if (var == null || var.getInitialValue() == null || !var.getInitialValue().isFunction()) {
+        return;
+      }
+
+      // Check that the clinit is safe to prune.
+      Node staticFnNode = var.getInitialValue();
+      if (callsClinit(staticFnNode, clinitName) && hasSafeArguments(t, callOrNewNode)) {
+        parent.removeChild(node);
+        t.getCompiler().reportCodeChange();
+      }
+    }
+
+    /**
+     * Returns whether the arguments to the specified call/new node are "safe". i.e. they are only
+     * parameters to the enclosing function or literal values (and not e.g. a static field reference
+     * which might need the clinit we are trying to remove).
+     */
+    private boolean hasSafeArguments(NodeTraversal t, Node callOrNewNode) {
+      Node child = callOrNewNode.getSecondChild();
+      while (child != null) {
+        if (!NodeUtil.isLiteralValue(child, false /* includeFunctions */)
+            && !isParameter(t, child)) {
+          return false;
+        }
+        child = child.getNext();
+      }
+      return true;
+    }
+
+    /** Returns whether the specified node is defined as a parameter to its enclosing function. */
+    private boolean isParameter(NodeTraversal t, Node n) {
+      if (!n.isName()) {
+        return false;
+      }
+      Var var = t.getScope().getVar(n.getString());
+      return var.getParentNode().isParamList();
+    }
+
+    /**
+     * Returns the call node associated with the specified node if one exists, otherwise returns
+     * null.
+     */
+    private Node getCallOrNewNode(Node n) {
+      if (n == null) {
+        return null;
+      }
+      switch (n.getToken()) {
+        case EXPR_RESULT:
+        case RETURN:
+          return getCallOrNewNode(n.getFirstChild());
+        case CALL:
+        case NEW:
+          return n;
+        case CONST:
+        case LET:
+        case VAR:
+          return n.getChildCount() == 1 ? getCallOrNewNode(n.getFirstFirstChild()) : null;
+        default:
+          return null;
+      }
+    }
+
+    /** Returns whether the specified function contains a call to the specified clinit. */
+    private boolean callsClinit(Node fnNode, String clinitName) {
+      Preconditions.checkNotNull(clinitName);
+      // TODO(michaelthomas): Consider checking all children, but watch out for return statements
+      // that could short-circuit the clinit.
+      Node child = fnNode.getLastChild().getFirstChild();
+      return child != null
+          && child.isExprResult()
+          && child.getFirstChild().isCall()
+          && clinitName.equals(getClinitMethodName(child.getFirstFirstChild()));
+    }
+  }
+
+  /**
+   * A traversal callback that removes the body of empty clinits.
    */
   private static final class EmptyClinitPruner extends AbstractPostOrderCallback {
 
@@ -120,49 +235,38 @@ public class J2clClinitPrunerPass implements CompilerPass {
     /**
      * Clears the body of any functions are are equivalent to empty functions.
      */
-    private Node trySubstituteEmptyFunction(Node fnNode, AbstractCompiler compiler) {
-      Preconditions.checkArgument(fnNode.isFunction());
-
+    private void trySubstituteEmptyFunction(Node fnNode, AbstractCompiler compiler) {
       String fnQualifiedName = NodeUtil.getName(fnNode);
 
       // Ignore anonymous/constructor functions.
       if (Strings.isNullOrEmpty(fnQualifiedName)) {
-        return fnNode;
+        return;
       }
 
       Node body = fnNode.getLastChild();
       if (!body.hasChildren()) {
-        return fnNode;
+        return;
       }
 
       // Ensure that the first expression in the body is setting itself to the empty function and
       // there are no other expressions.
       Node firstExpr = body.getFirstChild();
-      if (firstExpr.isExprResult()
-          && isAssignToEmptyFn(firstExpr.getFirstChild(), fnQualifiedName)
-          && (firstExpr.getNext() == null)) {
-        body.removeChildren();
-        compiler.reportCodeChange();
+      if (!isAssignToEmptyFn(firstExpr, fnQualifiedName) || firstExpr.getNext() != null) {
+        return;
       }
 
-      return fnNode;
+      body.removeChild(firstExpr);
+      compiler.reportCodeChange();
     }
 
-    private static boolean isAssignToEmptyFn(Node assignNode, String enclosingFnName) {
-      if (!assignNode.isAssign()) {
+    private static boolean isAssignToEmptyFn(Node node, String enclosingFnName) {
+      if (!NodeUtil.isExprAssign(node)) {
         return false;
       }
 
-      Node lhs = assignNode.getFirstChild();
-      Node rhs = assignNode.getLastChild();
-
-      // If the RHS is not an empty function then this isn't of interest.
-      if (!NodeUtil.isEmptyFunctionExpression(rhs)) {
-        return false;
-      }
-
-      // Ensure that we are actually mutating the given function.
-      return lhs.getQualifiedName() != null && lhs.matchesQualifiedName(enclosingFnName);
+      Node lhs = node.getFirstChild().getFirstChild();
+      Node rhs = node.getFirstChild().getLastChild();
+      return NodeUtil.isEmptyFunctionExpression(rhs) && lhs.matchesQualifiedName(enclosingFnName);
     }
   }
 

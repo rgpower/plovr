@@ -18,6 +18,7 @@ package com.google.javascript.jscomp;
 
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.javascript.jscomp.CheckRequiresForConstructors.MISSING_REQUIRE_CALL_WARNING;
+import static com.google.javascript.jscomp.CheckRequiresForConstructors.MISSING_REQUIRE_FOR_GOOG_SCOPE;
 import static com.google.javascript.jscomp.CheckRequiresForConstructors.MISSING_REQUIRE_WARNING;
 
 import com.google.common.collect.ImmutableList;
@@ -38,8 +39,7 @@ public final class MissingRequireTest extends Es6CompilerTestCase {
 
   @Override
   protected CompilerOptions getOptions(CompilerOptions options) {
-    options.setWarningLevel(DiagnosticGroups.MISSING_REQUIRE, CheckLevel.WARNING);
-    options.setWarningLevel(DiagnosticGroups.LINT_CHECKS, CheckLevel.WARNING);
+    options.setWarningLevel(DiagnosticGroups.STRICT_MISSING_REQUIRE, CheckLevel.WARNING);
     return super.getOptions(options);
   }
 
@@ -59,6 +59,10 @@ public final class MissingRequireTest extends Es6CompilerTestCase {
 
   private void testMissingRequire(String[] js, String warningText) {
     test(js, js, null, MISSING_REQUIRE_WARNING, warningText);
+  }
+
+  private void testMissingRequireForScope(String[] js, String warningText) {
+    test(js, js, null, MISSING_REQUIRE_FOR_GOOG_SCOPE, warningText);
   }
 
   public void testPassWithNoNewNodes() {
@@ -814,7 +818,7 @@ public final class MissingRequireTest extends Es6CompilerTestCase {
     testSame(js);
   }
 
-  public void testMissingGoogRequireFromGoogScope() {
+  public void testMissingGoogRequireFromGoogScope1() {
     String good = ""
         + "goog.provide('foo.bar.Baz');\n"
         + "/** @constructor */\n"
@@ -828,7 +832,23 @@ public final class MissingRequireTest extends Es6CompilerTestCase {
         + "});\n";
     String[] js = new String[] {good, bad};
     String warning = "missing require: 'foo.bar.Baz'";
-    testMissingRequire(js, warning);
+    testMissingRequireForScope(js, warning);
+  }
+
+  public void testMissingGoogRequireFromGoogScope2() {
+    String good = ""
+        + "goog.provide('foo.bar.Baz');\n"
+        + "/** @constructor */\n"
+        + "foo.bar.Baz = function() {}\n";
+    String bad = ""
+        + "goog.require('foo.bar.Baz');\n"
+        + "goog.scope(function() {\n"
+        + "  var bar = foo.bar;\n"
+        + "  use(new bar.Baz);\n"
+        + "});";
+    String[] js = new String[] {good, bad};
+    String warning = "missing require: 'foo.bar'";
+    testMissingRequireForScope(js, warning);
   }
 
   public void testNoMissingGoogRequireFromGoogScope() {
@@ -859,6 +879,24 @@ public final class MissingRequireTest extends Es6CompilerTestCase {
         + "    var qux = new Baz();\n"
         + "  }\n"
         + "});\n";
+    testSame(js);
+  }
+
+  public void testNoMissingGoogRequireFromGoogScopeExterns() {
+    String externs = "var location;";
+    String js = ""
+        + "goog.scope(function() {\n"
+        + "  var BASE_URL = location.href;\n"
+        + "});";
+    testSame(externs, js, null);
+  }
+
+  public void testTypedefInGoogScope() {
+    String js = LINE_JOINER.join(
+        "goog.scope(function() {",
+        "  /** @typedef {string} */",
+        "  var Baz_;",
+        "});");
     testSame(js);
   }
 

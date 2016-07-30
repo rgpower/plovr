@@ -19,7 +19,6 @@ package com.google.javascript.jscomp;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
-import com.google.javascript.rhino.Token;
 
 /**
  * Rewrites <code>new goog.testing.ObjectPropertyString(foo, 'bar')</code> to
@@ -64,7 +63,7 @@ final class ObjectPropertyStringPreprocess implements CompilerPass {
   public void process(Node externs, Node root) {
     addExternDeclaration(externs,
         IR.var(
-            IR.name(SimpleDefinitionFinder.EXTERN_OBJECT_PROPERTY_STRING)));
+            IR.name(NodeUtil.EXTERN_OBJECT_PROPERTY_STRING)));
     NodeTraversal.traverseEs6(compiler, root, new Callback());
   }
 
@@ -81,7 +80,7 @@ final class ObjectPropertyStringPreprocess implements CompilerPass {
     @Override
     public void visit(NodeTraversal t, Node n, Node parent) {
       if (n.matchesQualifiedName(OBJECT_PROPERTY_STRING)) {
-        Node newName = IR.name(SimpleDefinitionFinder.EXTERN_OBJECT_PROPERTY_STRING);
+        Node newName = IR.name(NodeUtil.EXTERN_OBJECT_PROPERTY_STRING);
         newName.useSourceInfoIfMissingFrom(n);
         parent.replaceChild(n, newName);
         compiler.reportCodeChange();
@@ -97,7 +96,7 @@ final class ObjectPropertyStringPreprocess implements CompilerPass {
 
       Node objectName = n.getFirstChild();
 
-      if (!objectName.matchesQualifiedName(SimpleDefinitionFinder.EXTERN_OBJECT_PROPERTY_STRING)) {
+      if (!objectName.matchesQualifiedName(NodeUtil.EXTERN_OBJECT_PROPERTY_STRING)) {
         return;
       }
 
@@ -111,7 +110,7 @@ final class ObjectPropertyStringPreprocess implements CompilerPass {
       if (!firstArgument.isQualifiedName()) {
         compiler.report(t.makeError(firstArgument,
             QUALIFIED_NAME_EXPECTED_ERROR,
-            Token.name(firstArgument.getType())));
+            firstArgument.getType().toString()));
         return;
       }
 
@@ -119,7 +118,7 @@ final class ObjectPropertyStringPreprocess implements CompilerPass {
       if (!secondArgument.isString()) {
         compiler.report(t.makeError(secondArgument,
             STRING_LITERAL_EXPECTED_ERROR,
-            Token.name(secondArgument.getType())));
+            secondArgument.getType().toString()));
         return;
       }
 

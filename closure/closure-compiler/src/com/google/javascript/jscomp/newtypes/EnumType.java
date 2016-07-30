@@ -20,6 +20,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import com.google.javascript.rhino.JSTypeExpression;
+import com.google.javascript.rhino.Node;
 
 import java.util.Collection;
 
@@ -50,19 +51,19 @@ public final class EnumType extends Namespace implements TypeWithProperties {
   // All properties have the same type, so we only need a set, not a map.
   private ImmutableSet<String> props;
 
-  private EnumType(
-      String name, JSTypeExpression typeExpr, Collection<String> props) {
+  private EnumType(JSTypes commonTypes, String name, Node defSite,
+      JSTypeExpression typeExpr, Collection<String> props) {
+    super(commonTypes, name, defSite);
     Preconditions.checkNotNull(typeExpr);
     this.state = State.NOT_RESOLVED;
-    this.name = name;
     // typeExpr is non-null iff the enum is not resolved
     this.typeExpr = typeExpr;
     this.props = ImmutableSet.copyOf(props);
   }
 
-  public static EnumType make(
-      String name, JSTypeExpression typeExpr, Collection<String> props) {
-    return new EnumType(name, typeExpr, props);
+  public static EnumType make(JSTypes commonTypes, String name, Node defSite,
+      JSTypeExpression typeExpr, Collection<String> props) {
+    return new EnumType(commonTypes, name, defSite, typeExpr, props);
   }
 
   public boolean isResolved() {
@@ -114,7 +115,7 @@ public final class EnumType extends Namespace implements TypeWithProperties {
    * the properties of the object literal are constant.
    */
   @Override
-  protected JSType computeJSType(JSTypes commonTypes) {
+  protected JSType computeJSType() {
     Preconditions.checkNotNull(enumPropType);
     Preconditions.checkState(this.namespaceType == null);
     PersistentMap<String, Property> propMap = PersistentMap.create();

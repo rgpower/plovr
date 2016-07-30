@@ -17,6 +17,7 @@
 package com.google.javascript.jscomp;
 
 import static com.google.common.truth.Truth.assertThat;
+import static com.google.javascript.jscomp.TypeCheck.INSTANTIATE_ABSTRACT_CLASS;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
@@ -30,7 +31,6 @@ import com.google.javascript.rhino.jstype.FunctionType;
 import com.google.javascript.rhino.jstype.JSType;
 import com.google.javascript.rhino.jstype.JSTypeNative;
 import com.google.javascript.rhino.jstype.ObjectType;
-
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -55,7 +55,7 @@ public final class TypeCheckTest extends CompilerTypeTestCase {
       + " make sure to give it a type.)";
 
   @Override
-  public void setUp() {
+  public void setUp() throws Exception {
     super.setUp();
   }
 
@@ -297,6 +297,22 @@ public final class TypeCheckTest extends CompilerTypeTestCase {
         "found   : boolean\n" +
         "required: Enum<string>",
         false);
+  }
+
+  public void testDontCrashOnRecursiveTemplateReference() {
+    testTypesWithExtraExterns(
+        LINE_JOINER.join(
+          "/**",
+          " * @constructor @struct",
+          " * @implements {Iterable<!Array<KEY|VAL>>}",
+          " * @template KEY, VAL",
+          " */",
+          "function Map(opt_iterable) {}"),
+        LINE_JOINER.join(
+          "/** @constructor @implements {Iterable<VALUE>} @template VALUE */",
+          "function Foo() {",
+          "  /** @type {!Map<VALUE, VALUE>} */ this.map = new Map;",
+          "}"));
   }
 
   public void testTemplatizedArray1() {
@@ -1214,6 +1230,50 @@ public final class TypeCheckTest extends CompilerTypeTestCase {
         "assignment to property x of n.T\n" +
         "found   : string\n" +
         "required: number");
+  }
+
+  public void testAbstractMethodInAbstractClass() {
+    testTypes(
+        LINE_JOINER.join(
+            "/** @abstract @constructor */ var C = function() {};",
+            "/** @abstract */ C.prototype.foo = function() {};"));
+  }
+
+  public void testAbstractMethodInConcreteClass() {
+    testTypes(
+        LINE_JOINER.join(
+            "/** @constructor */ var C = function() {};",
+            "/** @abstract */ C.prototype.foo = function() {};"),
+        "Abstract methods can only appear in abstract classes. Please declare the class as "
+            + "@abstract");
+  }
+
+  public void testAbstractMethodInConcreteClassExtendingAbstractClass() {
+    testTypes(
+        LINE_JOINER.join(
+            "/** @abstract @constructor */ var A = function() {};",
+            "/** @constructor @extends {A} */ var B = function() {};",
+            "/** @abstract */ B.prototype.foo = function() {};"),
+        "Abstract methods can only appear in abstract classes. Please declare the class as "
+            + "@abstract");
+  }
+
+  public void testConcreteMethodOverridingAbstractMethod() {
+    testTypes(
+        LINE_JOINER.join(
+            "/** @abstract @constructor */ var A = function() {};",
+            "/** @abstract */ A.prototype.foo = function() {};",
+            "/** @constructor @extends {A} */ var B = function() {};",
+            "/** @override */ B.prototype.foo = function() {};"));
+  }
+
+  public void testAbstractMethodInInterface() {
+    // TODO(moz): There's no need to tag methods with @abstract in interfaces, maybe give a warning
+    // on this.
+    testTypes(
+        LINE_JOINER.join(
+            "/** @interface */ var I = function() {};",
+            "/** @abstract */ I.prototype.foo = function() {};"));
   }
 
   public void testPropertyUsedBeforeDefinition1() {
@@ -7884,6 +7944,12 @@ public final class TypeCheckTest extends CompilerTypeTestCase {
               "/** @constructor */ goog.G = goog.F;");
   }
 
+  public void testNew19() {
+    testTypes(
+        "/** @constructor @abstract */ var Foo = function() {}; var foo = new Foo();",
+        INSTANTIATE_ABSTRACT_CLASS);
+  }
+
   public void testName1() {
     assertTypeEquals(VOID_TYPE, testNameNode("undefined"));
   }
@@ -8392,6 +8458,7 @@ public final class TypeCheckTest extends CompilerTypeTestCase {
     // Some code assumes that an object literal must have a object type,
     // while because of the cast, it could have any type (including
     // a union).
+    compiler.getOptions().setLanguageIn(CompilerOptions.LanguageMode.ECMASCRIPT6);
     testTypes(
         "for (var i = 0; i < 10; i++) {" +
           "var x = /** @type {Object|number} */ ({foo: 3});" +
@@ -8713,6 +8780,7 @@ public final class TypeCheckTest extends CompilerTypeTestCase {
   }
 
   public void testConstDecl2() {
+    compiler.getOptions().setLanguageIn(CompilerOptions.LanguageMode.ECMASCRIPT6);
     testTypes(
         "/** @param {?number} x */" +
         "function f(x) { " +
@@ -10121,17 +10189,234 @@ public final class TypeCheckTest extends CompilerTypeTestCase {
   }
 
   public void testInterfaceExtendsLoop2() {
-    testClosureTypesMultipleWarnings(
+    testClosureTypes(
         suppressMissingProperty("foo") +
-            "/** @record \n * @extends {F} */var G = function() {};" +
-            "/** @record \n * @extends {G} */var F = function() {};" +
-            "/** @constructor \n * @implements {F} */var H = function() {};" +
+        "/** @record \n * @extends {F} */var G = function() {};" +
+        "/** @record \n * @extends {G} */var F = function() {};" +
+        "/** @constructor \n * @implements {F} */var H = function() {};" +
         "alert((new H).foo);",
-        ImmutableList.of(
-            "extends loop involving F, "
-            + "loop: F -> G -> F",
-            "extends loop involving G, "
-            + "loop: G -> F -> G"));
+        "Parse error. Cycle detected in inheritance chain of type F");
+  }
+
+  public void testInheritPropFromMultipleInterfaces1() {
+    // Low#prop gets the type of whichever property is declared last,
+    // even if that type is not the most specific.
+    testTypes(
+        LINE_JOINER.join(
+            "/** @interface */",
+            "function High1() {}",
+            "/** @type {number|string} */",
+            "High1.prototype.prop;",
+            "/** @interface */",
+            "function High2() {}",
+            "/** @type {number} */",
+            "High2.prototype.prop;",
+            "/**",
+            " * @interface",
+            " * @extends {High1}",
+            " * @extends {High2}",
+            " */",
+            "function Low() {}",
+            "function f(/** !Low */ x) { var /** null */ n = x.prop; }"),
+        LINE_JOINER.join(
+            "initializing variable",
+            "found   : (number|string)",
+            "required: null"));
+  }
+
+  public void testInheritPropFromMultipleInterfaces2() {
+    // Low#prop gets the type of whichever property is declared last,
+    // even if that type is not the most specific.
+    testTypes(
+        LINE_JOINER.join(
+            "/** @interface */",
+            "function High1() {}",
+            "/** @type {number} */",
+            "High1.prototype.prop;",
+            "/** @interface */",
+            "function High2() {}",
+            "/** @type {number|string} */",
+            "High2.prototype.prop;",
+            "/**",
+            " * @interface",
+            " * @extends {High1}",
+            " * @extends {High2}",
+            " */",
+            "function Low() {}",
+            "function f(/** !Low */ x) { var /** null */ n = x.prop; }"),
+        LINE_JOINER.join(
+            "initializing variable",
+            "found   : number",
+            "required: null"));
+  }
+
+  public void testInheritPropFromMultipleInterfaces3() {
+    testTypes(
+        LINE_JOINER.join(
+            "/**",
+            " * @interface",
+            " * @template T1",
+            " */",
+            "function MyCollection() {}",
+            "/**",
+            " * @interface",
+            " * @template T2",
+            " * @extends {MyCollection<T2>}",
+            " */",
+            "function MySet() {}",
+            "/**",
+            " * @interface",
+            " * @template T3,T4",
+            " */",
+            "function MyMapEntry() {}",
+            "/**",
+            " * @interface",
+            " * @template T5,T6",
+            " */",
+            "function MyMultimap() {}",
+            "/** @return {MyCollection<MyMapEntry<T5, T6>>} */",
+            "MyMultimap.prototype.entries = function() {};",
+            "/**",
+            " * @interface",
+            " * @template T7,T8",
+            " * @extends {MyMultimap<T7, T8>}",
+            " */",
+            "function MySetMultimap() {}",
+            "/** @return {MySet<MyMapEntry<T7, T8>>} */",
+            "MySetMultimap.prototype.entries = function() {};",
+            "/**",
+            " * @interface",
+            " * @template T9,T10",
+            " * @extends {MyMultimap<T9, T10>}",
+            " */",
+            "function MyFilteredMultimap() {}",
+            "/**",
+            " * @interface",
+            " * @template T11,T12",
+            " * @extends {MyFilteredMultimap<T11, T12>}",
+            " * @extends {MySetMultimap<T11, T12>}",
+            " */",
+            "function MyFilteredSetMultimap() {}"));
+  }
+
+  public void testInheritSameGenericInterfaceFromDifferentPaths() {
+    testTypes(
+        LINE_JOINER.join(
+            "/** @const */ var ns = {};",
+            "/**",
+            " * @constructor",
+            " * @template T1",
+            " */",
+            "ns.Foo = function() {};",
+            "/**",
+            " * @interface",
+            " * @template T2",
+            " */",
+            "ns.High = function() {};",
+            "/** @type {!ns.Foo<T2>} */",
+            "ns.High.prototype.myprop;",
+            "/**",
+            " * @interface",
+            " * @template T3",
+            " * @extends {ns.High<T3>}",
+            " */",
+            "ns.Med1 = function() {};",
+            "/**",
+            " * @interface",
+            " * @template T4",
+            " * @extends {ns.High<T4>}",
+            " */",
+            "ns.Med2 = function() {};",
+            "/**",
+            " * @interface",
+            " * @template T5",
+            " * @extends {ns.Med1<T5>}",
+            " * @extends {ns.Med2<T5>}",
+            " */",
+            "ns.Low = function() {};"));
+  }
+
+  public void testFillInMissingGenerics1() {
+    testTypes(
+        LINE_JOINER.join(
+            "/**",
+            " * @constructor",
+            " * @template T",
+            " */",
+            "function Foo() {}",
+            "/**",
+            " * @constructor",
+            " * @template T",
+            " */",
+            "function Bar() {}",
+            "/** @type {!Foo<T>} */",
+            "Bar.prototype.myprop;",
+            "/** @param {!Bar} x */",
+            "function f(x) {",
+            "  var /** null */ n = x.myprop;",
+            "}"),
+        LINE_JOINER.join(
+            "initializing variable",
+            "found   : Foo<?>",
+            "required: null"));
+  }
+
+  public void testFillInMissingGenerics2() {
+    testTypes(
+        LINE_JOINER.join(
+            "/**",
+            " * @constructor",
+            " * @template T",
+            " */",
+            "function Foo() {}",
+            "/**",
+            " * @constructor",
+            " * @template T,U",
+            " */",
+            "function Bar() {}",
+            "/** @type {!Foo<U>} */",
+            "Bar.prototype.myprop;",
+            "/** @param {!Bar<number>} x */",
+            "function f(x) {",
+            "  var /** null */ n = x.myprop;",
+            "}"),
+        LINE_JOINER.join(
+            "initializing variable",
+            "found   : Foo<?>",
+            "required: null"));
+  }
+
+  public void testFillInMissingGenerics3() {
+    // If we don't fill in the missing generics here, we get a spurious
+    // warning that Low gets incompatible types for myprop from its
+    // super-interfaces.
+    testTypes(
+        LINE_JOINER.join(
+            "/**",
+            " * @constructor",
+            " * @template T",
+            " */",
+            "function Foo() {}",
+            "/**",
+            " * @interface",
+            " * @template T",
+            " */",
+            "function High1() {}",
+            "/** @type {!Foo<T>} */",
+            "High1.prototype.myprop;",
+            "/**",
+            " * @interface",
+            " * @template T",
+            " */",
+            "function High2() {}",
+            "/** @type {!Foo<T>} */",
+            "High2.prototype.myprop;",
+            "/**",
+            " * @interface",
+            " * @extends {High1}",
+            " * @extends {High2}",
+            " */",
+            "function Low() {}"));
   }
 
   public void testConversionFromInterfaceToRecursiveConstructor() {
@@ -16619,6 +16904,32 @@ public final class TypeCheckTest extends CompilerTypeTestCase {
             "/** @type {{value: string}} */ ns.x;"),
         "variable ns.x redefined with type {value: string}, "
         + "original definition at [testcode]:5 with type (null|rec<string>)");
+  }
+
+  public void testModuloNullUndefThatWorkedWithoutSpecialSubtypingRules() {
+    testTypes(LINE_JOINER.join(
+        "/** @constructor */",
+        "function Foo() {}",
+        "function f(/** function(?Foo, !Foo) */ x) {",
+        "  return /** @type {function(!Foo, ?Foo)} */ (x);",
+        "}"));
+
+    testTypes(LINE_JOINER.join(
+        "/** @constructor */",
+        "function Foo() {}",
+        "function f(/** !Array<!Foo> */ to, /** !Array<?Foo> */ from) {",
+        "  to = from;",
+        "}"));
+
+    testTypes(LINE_JOINER.join(
+        "function f(/** ?Object */ x) {",
+        "  return {} instanceof x;",
+        "}"));
+
+    testTypes(LINE_JOINER.join(
+        "function f(/** ?Function */ x) {",
+        "  return x();",
+        "}"));
   }
 
   private void testTypes(String js) {

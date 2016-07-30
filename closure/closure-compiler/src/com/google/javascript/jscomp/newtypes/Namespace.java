@@ -39,7 +39,8 @@ public abstract class Namespace {
   // "Simple type" properties (i.e. represented as JSTypes rather than something
   // more specific).
   protected PersistentMap<String, Property> otherProps = PersistentMap.create();
-  protected String name;
+  protected final String name;
+  protected final JSTypes commonTypes;
   // Represents the namespace as an ObjectType wrapped in a JSType.
   // The namespace field of the ObjectType contains the namespace instance.
   // In addition,
@@ -48,11 +49,23 @@ public abstract class Namespace {
   protected JSType namespaceType;
   // Used to detect recursion when computing the type of circular namespaces.
   private boolean duringComputeJSType = false;
+  // The node that defines this namespace.
+  protected final Node defSite;
 
-  protected abstract JSType computeJSType(JSTypes commonTypes);
+  protected Namespace(JSTypes commonTypes, String name, Node defSite) {
+    this.name = name;
+    this.commonTypes = commonTypes;
+    this.defSite = Preconditions.checkNotNull(defSite);
+  }
+
+  protected abstract JSType computeJSType();
 
   public final String getName() {
     return name;
+  }
+
+  public Node getDefSite() {
+    return this.defSite;
   }
 
   private boolean isDefined(String name) {
@@ -193,7 +206,7 @@ public abstract class Namespace {
     if (this.namespaces.containsKey(pname)) {
       Namespace subns = this.namespaces.get(pname);
       Preconditions.checkState(subns.namespaceType != null);
-      return Property.make(subns.namespaceType, subns.namespaceType);
+      return Property.makeWithDefsite(subns.getDefSite(), subns.namespaceType, subns.namespaceType);
     }
     if (this.otherProps.containsKey(pname)) {
       return this.otherProps.get(pname);
@@ -216,7 +229,7 @@ public abstract class Namespace {
     return s;
   }
 
-  public final JSType toJSType(JSTypes commonTypes) {
+  public final JSType toJSType() {
     if (this.namespaceType == null) {
       Preconditions.checkNotNull(commonTypes);
       for (Namespace ns : this.namespaces.values()) {
@@ -224,10 +237,10 @@ public abstract class Namespace {
           return null;
         }
         this.duringComputeJSType = true;
-        ns.toJSType(commonTypes);
+        ns.toJSType();
         this.duringComputeJSType = false;
       }
-      this.namespaceType = Preconditions.checkNotNull(computeJSType(commonTypes));
+      this.namespaceType = Preconditions.checkNotNull(computeJSType());
     }
     return this.namespaceType;
   }
@@ -251,7 +264,7 @@ public abstract class Namespace {
           continue;
         }
       }
-      win.addProtoProperty(entry.getKey(), null, ns.toJSType(commonTypes), true);
+      win.addProtoProperty(entry.getKey(), null, ns.toJSType(), true);
     }
     for (Map.Entry<String, Property> entry : this.otherProps.entrySet()) {
       win.addProtoProperty(

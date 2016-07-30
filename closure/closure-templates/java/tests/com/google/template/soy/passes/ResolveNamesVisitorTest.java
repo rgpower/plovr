@@ -186,6 +186,24 @@ public final class ResolveNamesVisitorTest extends TestCase {
         .fileSet();
   }
 
+  public void testAccidentalGlobalReference() {
+    assertResolveNamesFails(
+        "Found global reference aliasing a local variable 'group', did you mean '$group'?",
+        constructTemplateSource(
+            "{@param group: string}",
+            "{if group}{$group}{/if}"));
+    assertResolveNamesFails(
+        "Found global reference aliasing a local variable 'group', did you mean '$group'?",
+        constructTemplateSource(
+            "{let $group: 'foo' /}",
+            "{if group}{$group}{/if}"));
+    assertResolveNamesFails(
+        "Unbound global 'global'.",
+        constructTemplateSource(
+            "{let $local: 'foo' /}",
+            "{if global}{$local}{/if}"));
+  }
+
   public void testLetContentSlotLifetime() {
     SoyFileSetNode soyTree =
         SoyFileSetParserBuilder.forFileContents(
@@ -217,6 +235,7 @@ public final class ResolveNamesVisitorTest extends TestCase {
     // 1. removing this dead feature
     // 2. moving this functionality from CheckTemplateParamsVisitor to ResolveNamesVisitor where it
     //    belongs
+    // http://b/21877289 covers various issues with syntax version
     assertResolveNamesFails("Undefined variable", constructTemplateSource("{$pa}"));
   }
 

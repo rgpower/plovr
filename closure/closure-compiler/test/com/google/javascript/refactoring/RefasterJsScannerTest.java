@@ -413,7 +413,7 @@ public class RefasterJsScannerTest {
     String externs = ""
         + "var obj = {};\n"
         + "obj.prop = 6;"
-        + "var CONSTANT = 3;n";
+        + "var CONSTANT = 3;\n";
     String originalCode = "for (var i = CONSTANT; i < 5; i++) {}";
     String expectedCode = "for (var i = CONSTANT2; i < 5; i++) {}";
     String template = ""
@@ -604,6 +604,49 @@ public class RefasterJsScannerTest {
     //  - theS.p would match either template (see {@link #test_strictSubtypeMatching}),
     //    but since before_template_S comes first it takes precedence.
     String expectedCode = "setP(theT); setPonS(theS);";
+    assertChanges(externs, originalCode, expectedCode, template);
+  }
+
+  @Test
+  public void test_es6() throws Exception {
+    String externs = ""
+        + "/** @constructor */\n"
+        + "function FooType() {}\n"
+        + "/** @param {string} str */"
+        + "FooType.prototype.bar = function(str) {};\n"
+        + "/** @param {string} str */"
+        + "FooType.prototype.baz = function(str) {};\n";
+    String template = ""
+        + "/**\n"
+        + " * @param {FooType} foo\n"
+        + " * @param {string} str\n"
+        + " */\n"
+        + "function before_foo(foo, str) {\n"
+        + "  foo.bar(str);\n"
+        + "};\n"
+        + "/**\n"
+        + " * @param {FooType} foo\n"
+        + " * @param {string} str\n"
+        + " */\n"
+        + "function after_foo(foo, str) {\n"
+        + "  foo.baz(str);\n"
+        + "}\n";
+    String originalCode = ""
+        + "goog.module('foo.bar');\n"
+        + "const STR = '3';\n"
+        + "const Clazz = class {\n"
+        + "  constructor() { /** @const */ this.obj = new FooType(); }\n"
+        + "  someMethod() { this.obj.bar(STR); }\n"
+        + "};\n"
+        + "exports.Clazz = Clazz;\n";
+    String expectedCode = ""
+        + "goog.module('foo.bar');\n"
+        + "const STR = '3';\n"
+        + "const Clazz = class {\n"
+        + "  constructor() { /** @const */ this.obj = new FooType(); }\n"
+        + "  someMethod() { this.obj.baz(STR); }\n"
+        + "};\n"
+        + "exports.Clazz = Clazz;\n";
     assertChanges(externs, originalCode, expectedCode, template);
   }
 

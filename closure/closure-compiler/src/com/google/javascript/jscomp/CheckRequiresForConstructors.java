@@ -68,7 +68,7 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
     // Used during a normal compilation. The entire program + externs are available.
     FULL_COMPILE
   };
-  private final Mode mode;
+  private Mode mode;
 
   private final Set<String> providedNames = new HashSet<>();
   private final Map<String, Node> requires = new HashMap<>();
@@ -82,7 +82,7 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
   // Adding an entry to weakUsages indicates that the name is used, but in a way which may not
   // require a goog.require, such as in a @type annotation. If the only usages of a name are
   // in weakUsages, don't give a missingRequire warning, nor an extraRequire warning.
-  private final Map<String, Node> weakUsages = new HashMap<>();
+  private final Set<String> weakUsages = new HashSet<>();
 
   // The body of the goog.scope function, if any.
   @Nullable
@@ -92,7 +92,10 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
       DiagnosticType.disabled(
           "JSC_MISSING_REQUIRE_WARNING", "missing require: ''{0}''");
 
-  // TODO(tbreisacher): Move this into the missingRequire group (b/27856452).
+  static final DiagnosticType MISSING_REQUIRE_FOR_GOOG_SCOPE =
+      DiagnosticType.disabled(
+          "JSC_MISSING_REQUIRE_FOR_GOOG_SCOPE", "missing require: ''{0}''");
+
   static final DiagnosticType MISSING_REQUIRE_CALL_WARNING =
       DiagnosticType.disabled(
           "JSC_MISSING_REQUIRE_CALL_WARNING", "missing require: ''{0}''");
@@ -124,6 +127,9 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
 
   @Override
   public void hotSwapScript(Node scriptRoot, Node originalRoot) {
+    // TODO(joeltine): Remove this and properly handle hot swap passes. See
+    // b/28869281 for context.
+    mode = Mode.SINGLE_FILE;
     NodeTraversal.traverseEs6(compiler, scriptRoot, this);
   }
 
@@ -190,44 +196,49 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
   public void visit(NodeTraversal t, Node n, Node parent) {
     maybeAddJsDocUsages(t, n);
     switch (n.getType()) {
-      case Token.ASSIGN:
+      case ASSIGN:
         maybeAddProvidedName(n);
         break;
-      case Token.VAR:
-      case Token.LET:
-      case Token.CONST:
+      case VAR:
+      case LET:
+      case CONST:
         maybeAddProvidedName(n);
-        maybeAddGoogScopeUsage(n, parent);
+        maybeAddGoogScopeUsage(t, n, parent);
         break;
-      case Token.FUNCTION:
+      case FUNCTION:
         // Exclude function expressions.
         if (NodeUtil.isStatement(n)) {
           maybeAddProvidedName(n);
         }
         break;
-      case Token.NAME:
+      case NAME:
         if (!NodeUtil.isLValue(n)) {
           visitQualifiedName(n);
         }
         break;
-      case Token.GETPROP:
-        visitQualifiedName(n);
+      case GETPROP:
+        // If parent is a GETPROP, they will handle the weak usages.
+        if (!parent.isGetProp() && n.isQualifiedName()) {
+          visitQualifiedName(n);
+        }
         break;
-      case Token.CALL:
+      case CALL:
         visitCallNode(t, n, parent);
         break;
-      case Token.SCRIPT:
+      case SCRIPT:
         visitScriptNode(t);
         reset();
         break;
-      case Token.NEW:
+      case NEW:
         visitNewNode(t, n);
         break;
-      case Token.CLASS:
+      case CLASS:
         visitClassNode(t, n);
         break;
-      case Token.IMPORT:
+      case IMPORT:
         visitImportNode(n);
+        break;
+      default:
         break;
     }
   }
@@ -310,6 +321,9 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
             String defaultName = parentNamespace != null ? parentNamespace : namespace;
             String nameToReport = Iterables.getFirst(classNames, defaultName);
             compiler.report(t.makeError(node, MISSING_REQUIRE_CALL_WARNING, nameToReport));
+          } else if (node.getParent().isName()
+              && node.getParent().getGrandparent() == googScopeBlock) {
+            compiler.report(t.makeError(node, MISSING_REQUIRE_FOR_GOOG_SCOPE, namespace));
           } else {
             compiler.report(t.makeError(node, MISSING_REQUIRE_WARNING, namespace));
           }
@@ -323,7 +337,7 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
     for (Map.Entry<String, Node> entry : requires.entrySet()) {
       String require = entry.getKey();
       Node call = entry.getValue();
-      if (!usages.containsKey(require) && !weakUsages.containsKey(require)) {
+      if (!usages.containsKey(require) && !weakUsages.contains(require)) {
         reportExtraRequireWarning(call, require);
       }
     }
@@ -414,7 +428,7 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
 
     Node callee = call.getFirstChild();
     if (callee.matchesQualifiedName("goog.module.get") && call.getSecondChild().isString()) {
-      weakUsages.put(call.getSecondChild().getString(), call);
+      weakUsages.add(call.getSecondChild().getString());
     }
 
     if (codingConvention.isClassFactoryCall(call)) {
@@ -426,7 +440,7 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
     }
 
     if (callee.isName()) {
-      weakUsages.put(callee.getString(), callee);
+      weakUsages.add(callee.getString());
     } else if (callee.isQualifiedName()) {
       Node root = NodeUtil.getRootOfQualifiedName(callee);
       if (root.isName()) {
@@ -436,6 +450,17 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
         }
       }
     }
+  }
+
+  private void addWeakUsagesOfAllPrefixes(String qualifiedName) {
+    // For "foo.bar.baz.qux" add weak usages for "foo.bar.baz.qux", "foo.bar.baz",
+    // "foo.bar", and "foo" because those might all be goog.provide'd in different files,
+    // so it doesn't make sense to require the user to goog.require all of them.
+    for (int i = qualifiedName.indexOf('.'); i != -1; i = qualifiedName.indexOf('.', i + 1)) {
+      String prefix = qualifiedName.substring(0, i);
+      weakUsages.add(prefix);
+    }
+    weakUsages.add(qualifiedName);
   }
 
   private void visitQualifiedName(Node getpropOrName) {
@@ -462,12 +487,7 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
       }
     }
 
-    // For "foo.bar.baz.qux" add weak usages for "foo.bar.baz.qux", "foo.bar.baz",
-    // "foo.bar", and "foo" because those might all be goog.provide'd in different files,
-    // so it doesn't make sense to require the user to goog.require all of them.
-    for (; getpropOrName != null; getpropOrName = getpropOrName.getFirstChild()) {
-      weakUsages.put(getpropOrName.getQualifiedName(), getpropOrName);
-    }
+    addWeakUsagesOfAllPrefixes(getpropOrName.getQualifiedName());
   }
 
   private void visitNewNode(NodeTraversal t, Node newNode) {
@@ -476,7 +496,7 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
     // Single names are likely external, but if this is running in single-file mode, they
     // will not be in the externs, so add a weak usage.
     if (mode == Mode.SINGLE_FILE && qNameNode.isName()) {
-      weakUsages.put(qNameNode.getString(), qNameNode);
+      weakUsages.add(qNameNode.getString());
       return;
     }
 
@@ -508,7 +528,7 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
     // because those might be goog.provide'd from a different file than foo.bar.Baz.Qux,
     // so it doesn't make sense to require the user to goog.require all of them.
     for (; qNameNode != null; qNameNode = qNameNode.getFirstChild()) {
-      weakUsages.put(qNameNode.getQualifiedName(), qNameNode);
+      weakUsages.add(qNameNode.getQualifiedName());
     }
   }
 
@@ -528,7 +548,7 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
     // Single names are likely external, but if this is running in single-file mode, they
     // will not be in the externs, so add a weak usage.
     if (mode == Mode.SINGLE_FILE && extendClass.isName()) {
-      weakUsages.put(extendClass.getString(), extendClass);
+      weakUsages.add(extendClass.getString());
       return;
     }
 
@@ -561,12 +581,18 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
    * "var Dog = some.cute.Dog;" counts as a usage of some.cute.Dog, if it's immediately
    * inside a goog.scope function.
    */
-  private void maybeAddGoogScopeUsage(Node n, Node parent) {
+  private void maybeAddGoogScopeUsage(NodeTraversal t, Node n, Node parent) {
     Preconditions.checkState(NodeUtil.isNameDeclaration(n));
     if (n.getChildCount() == 1 && parent == googScopeBlock) {
       Node rhs = n.getFirstFirstChild();
-      if (rhs.isQualifiedName()) {
-        usages.put(rhs.getQualifiedName(), rhs);
+      if (rhs != null && rhs.isQualifiedName()) {
+        Node root = NodeUtil.getRootOfQualifiedName(rhs);
+        if (root.isName()) {
+          Var var = t.getScope().getVar(root.getString());
+          if (var == null || (var.isGlobal() && !var.isExtern())) {
+            usages.put(rhs.getQualifiedName(), rhs);
+          }
+        }
       }
     }
   }
@@ -628,7 +654,7 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
    * warning is given whether the require is there or not.
    */
   private void maybeAddWeakUsage(NodeTraversal t, Node n, Node typeNode) {
-    maybeAddUsage(t, n, typeNode, this.weakUsages, Predicates.<Node>alwaysTrue());
+    maybeAddUsage(t, n, typeNode, false, Predicates.<Node>alwaysTrue());
   }
 
   /**
@@ -645,14 +671,14 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
             return n == expr.getRoot();
           }
         };
-    maybeAddUsage(t, n, expr.getRoot(), this.usages, pred);
+    maybeAddUsage(t, n, expr.getRoot(), true, pred);
   }
 
   private void maybeAddUsage(
       final NodeTraversal t,
       final Node n,
       Node rootTypeNode,
-      final Map<String, Node> usagesMap,
+      final boolean markStrongUsages,
       Predicate<Node> pred) {
     Visitor visitor =
         new Visitor() {
@@ -663,30 +689,30 @@ class CheckRequiresForConstructors implements HotSwapCompilerPass, NodeTraversal
               if (mode == Mode.SINGLE_FILE && !typeString.contains(".")) {
                 // If using a single-name type, it's probably something like Error, which we
                 // don't have externs for.
-                weakUsages.put(typeString, n);
+                weakUsages.add(typeString);
                 return;
               }
               String rootName = Splitter.on('.').split(typeString).iterator().next();
               Var var = t.getScope().getVar(rootName);
               if ((var == null || !var.isExtern())
                   && !ClosureRewriteModule.isModuleExport(rootName)) {
-                usagesMap.put(typeString, n);
-
-                // Regardless of whether we're adding a weak or strong usage here, add weak usages
-                // for the prefixes of the namespace, like we do for GETPROP nodes. Otherwise we get
-                // an extra require warning for cases like:
-                //
-                //     goog.require('foo.bar.SomeService');
-                //
-                //     /** @constructor @extends {foo.bar.SomeService.Handler} */
-                //     var MyHandler = function() {};
-                Node getprop = NodeUtil.newQName(compiler, typeString);
-                getprop.useSourceInfoIfMissingFromForTree(typeNode);
-                visitQualifiedName(getprop);
+                if (markStrongUsages) {
+                  usages.put(typeString, n);
+                } else {
+                  // If we're not adding strong usages here, add weak usages for the prefixes of the
+                  // namespace, like we do for GETPROP nodes. Otherwise we get an extra require
+                  // warning for cases like:
+                  //
+                  //     goog.require('foo.bar.SomeService');
+                  //
+                  //     /** @constructor @extends {foo.bar.SomeService.Handler} */
+                  //     var MyHandler = function() {};
+                  addWeakUsagesOfAllPrefixes(typeString);
+                }
               } else {
                 // Even if the root namespace is in externs, add a weak usage because the full
                 // namespace may still be goog.provided.
-                weakUsages.put(typeString, n);
+                weakUsages.add(typeString);
               }
             }
           }

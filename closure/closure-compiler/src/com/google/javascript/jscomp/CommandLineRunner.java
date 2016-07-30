@@ -29,22 +29,9 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Multimap;
 import com.google.common.io.Files;
 import com.google.javascript.jscomp.SourceMap.LocationMapping;
+import com.google.javascript.jscomp.deps.ModuleLoader;
 import com.google.javascript.rhino.TokenStream;
 import com.google.protobuf.TextFormat;
-
-import org.kohsuke.args4j.Argument;
-import org.kohsuke.args4j.CmdLineException;
-import org.kohsuke.args4j.CmdLineParser;
-import org.kohsuke.args4j.NamedOptionDef;
-import org.kohsuke.args4j.Option;
-import org.kohsuke.args4j.OptionDef;
-import org.kohsuke.args4j.OptionHandlerFilter;
-import org.kohsuke.args4j.spi.FieldSetter;
-import org.kohsuke.args4j.spi.OptionHandler;
-import org.kohsuke.args4j.spi.Parameters;
-import org.kohsuke.args4j.spi.Setter;
-import org.kohsuke.args4j.spi.StringOptionHandler;
-
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -73,6 +60,18 @@ import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.kohsuke.args4j.Argument;
+import org.kohsuke.args4j.CmdLineException;
+import org.kohsuke.args4j.CmdLineParser;
+import org.kohsuke.args4j.NamedOptionDef;
+import org.kohsuke.args4j.Option;
+import org.kohsuke.args4j.OptionDef;
+import org.kohsuke.args4j.OptionHandlerFilter;
+import org.kohsuke.args4j.spi.FieldSetter;
+import org.kohsuke.args4j.spi.OptionHandler;
+import org.kohsuke.args4j.spi.Parameters;
+import org.kohsuke.args4j.spi.Setter;
+import org.kohsuke.args4j.spi.StringOptionHandler;
 
 /**
  * CommandLineRunner translates flags into Java API calls on the Compiler.
@@ -491,11 +490,14 @@ public class CommandLineRunner extends
         usage = "Rewrite Dart Dev Compiler output to be compiler-friendly.")
     private boolean dartPass = false;
 
-    @Option(name = "--j2cl_pass",
-        hidden = true,
-        handler = BooleanOptionHandler.class,
-        usage = "Rewrite J2CL output to be compiler-friendly.")
-    private boolean j2clPass = false;
+    @Option(
+      name = "--j2cl_pass",
+      hidden = true,
+      usage =
+          "Rewrite J2CL output to be compiler-friendly if enabled (ON or AUTO). "
+              + "Options:OFF, ON, AUTO(default)"
+    )
+    private String j2clPassMode = "AUTO";
 
     @Option(
       name = "--output_manifest",
@@ -616,9 +618,9 @@ public class CommandLineRunner extends
         usage = "Preserves type annotations.")
     private boolean preserveTypeAnnotations = false;
 
-    @Option(name = "--noinject_library",
-        usage = "Prevent injecting the named runtime libraries.")
-    private List<String> noinjectLibrary = new ArrayList<>();
+    @Option(name = "--inject_libraries",
+        usage = "Allow injecting runtime libraries.")
+    private boolean injectLibraries = true;
 
     @Option(
       name = "--dependency_mode",
@@ -647,7 +649,7 @@ public class CommandLineRunner extends
     @Option(name = "--rewrite_polyfills",
         handler = BooleanOptionHandler.class,
         usage = "Rewrite ES6 library calls to use polyfills provided by the compiler's runtime.")
-    private boolean rewritePolyfills = false;
+    private boolean rewritePolyfills = true;
 
     @Option(name = "--print_source_after_each_pass",
         hidden = true,
@@ -1351,7 +1353,7 @@ public class CommandLineRunner extends
       } else if (flags.commonJsPathPrefix != null) {
         moduleRoots.addAll(flags.commonJsPathPrefix);
       } else {
-        moduleRoots.add(ES6ModuleLoader.DEFAULT_FILENAME_PREFIX);
+        moduleRoots.add(ModuleLoader.DEFAULT_FILENAME_PREFIX);
       }
 
       for (String entryPoint : flags.entryPoints) {
@@ -1496,6 +1498,9 @@ public class CommandLineRunner extends
     options.setEnvironment(flags.environment);
 
     options.setChecksOnly(flags.checksOnly);
+    if (flags.checksOnly) {
+      options.setOutputJs(CompilerOptions.OutputJs.NONE);
+    }
 
     if (flags.useTypesForOptimization) {
       level.setTypeBasedOptimizationOptions(options);
@@ -1530,13 +1535,22 @@ public class CommandLineRunner extends
 
     options.setDartPass(flags.dartPass);
 
-    options.setJ2clPass(flags.j2clPass);
+    if (!flags.j2clPassMode.isEmpty()) {
+      try {
+        CompilerOptions.J2clPassMode j2clPassMode =
+            CompilerOptions.J2clPassMode.valueOf(flags.j2clPassMode.toUpperCase());
+        options.setJ2clPass(j2clPassMode);
+      } catch (IllegalArgumentException ex) {
+        throw new FlagUsageException(
+            "Unknown J2clPassMode `" + flags.j2clPassMode + "' specified.");
+      }
+    }
 
     options.renamePrefixNamespace = flags.renamePrefixNamespace;
 
     options.setPreserveTypeAnnotations(flags.preserveTypeAnnotations);
 
-    options.setPreventLibraryInjection(flags.noinjectLibrary);
+    options.setPreventLibraryInjection(!flags.injectLibraries);
 
     options.rewritePolyfills = flags.rewritePolyfills;
 

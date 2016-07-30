@@ -260,6 +260,8 @@ public final class PeepholeSubstituteAlternateSyntaxTest extends CompilerTestCas
     fold("x = window.Object", "x = Object");
     fold("x = window.Array", "x = Array");
     fold("x = window.Error", "x = Error");
+    fold("x = window.RegExp", "x = RegExp");
+    fold("x = window.Math", "x = Math");
 
     // Not currently handled by the pass but should be folded in the future.
     foldSame("x = window.String");

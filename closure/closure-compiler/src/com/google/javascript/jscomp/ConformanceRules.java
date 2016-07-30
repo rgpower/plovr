@@ -405,17 +405,22 @@ public final class ConformanceRules {
       }
 
       if (n.isGetProp() || n.isName()) {
-        // TODO(johnlenz): restrict to global names
         if (n.isQualifiedName()) {
           for (int i = 0; i < names.size(); i++) {
             String name = names.get(i);
-            if (n.matchesQualifiedName(name)) {
+            if (n.matchesQualifiedName(name) && isRootOfQualifiedNameGlobal(t, n)) {
               return ConformanceResult.VIOLATION;
             }
           }
         }
       }
       return ConformanceResult.CONFORMANCE;
+    }
+
+    private static boolean isRootOfQualifiedNameGlobal(NodeTraversal t, Node n) {
+      String rootName = NodeUtil.getRootOfQualifiedName(n).getQualifiedName();
+      Var v = t.getScope().getVar(rootName);
+      return v != null && v.isGlobal();
     }
   }
 
@@ -947,7 +952,8 @@ public final class ConformanceRules {
         }
         Node templateRoot = parseRoot.getFirstChild();
         TemplateAstMatcher astMatcher =
-            new TemplateAstMatcher(compiler, templateRoot, TypeMatchingStrategy.LOOSE);
+            new TemplateAstMatcher(
+                compiler.getTypeIRegistry(), templateRoot, TypeMatchingStrategy.LOOSE);
         builder.add(astMatcher);
       }
 
@@ -1144,13 +1150,13 @@ public final class ConformanceRules {
       boolean violation;
 
       switch (n.getType()) {
-          case Token.GETPROP:
-          case Token.GETELEM:
-          case Token.NEW:
-          case Token.CALL:
+          case GETPROP:
+          case GETELEM:
+          case NEW:
+          case CALL:
             violation = report(n.getFirstChild());
             break;
-          case Token.IN:
+          case IN:
             violation = report(n.getLastChild());
             break;
           default:
@@ -1253,8 +1259,12 @@ public final class ConformanceRules {
 
     @Override
     protected ConformanceResult checkConformance(NodeTraversal t, Node n) {
-      // TODO(tbreisacher): Figure out how to remove this restriction after b/26884264 is fixed.
-      if (NodeUtil.isInSyntheticScript(n)) {
+      // TODO(tbreisacher): Figure out how to remove this restriction.
+      String filename = n.getSourceFileName();
+      if (filename != null
+          && (filename.contains("synthetic:es6/weakmap")
+              || filename.contains("synthetic:es6/weakset")
+              || filename.contains("synthetic:runtime_type_check"))) {
         return ConformanceResult.CONFORMANCE;
       }
 

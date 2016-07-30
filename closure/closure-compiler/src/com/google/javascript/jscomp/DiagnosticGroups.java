@@ -20,14 +20,15 @@ import com.google.common.annotations.GwtIncompatible;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.google.javascript.jscomp.lint.CheckArrayWithGoogObject;
 import com.google.javascript.jscomp.lint.CheckDuplicateCase;
 import com.google.javascript.jscomp.lint.CheckEmptyStatements;
 import com.google.javascript.jscomp.lint.CheckEnums;
-import com.google.javascript.jscomp.lint.CheckForInOverArray;
 import com.google.javascript.jscomp.lint.CheckInterfaces;
 import com.google.javascript.jscomp.lint.CheckJSDocStyle;
 import com.google.javascript.jscomp.lint.CheckMissingSemicolon;
 import com.google.javascript.jscomp.lint.CheckNullableReturn;
+import com.google.javascript.jscomp.lint.CheckPrimitiveAsObject;
 import com.google.javascript.jscomp.lint.CheckPrototypeProperties;
 import com.google.javascript.jscomp.lint.CheckRequiresAndProvidesSorted;
 import com.google.javascript.jscomp.lint.CheckUnusedLabels;
@@ -46,8 +47,8 @@ public class DiagnosticGroups {
   static final DiagnosticType UNUSED =
       DiagnosticType.warning("JSC_UNUSED", "{0}");
 
-  public static final Set<String> wildcardExcludedGroups =
-      ImmutableSet.of("reportUnknownTypes", "analyzerChecks");
+  public static final Set<String> wildcardExcludedGroups = ImmutableSet.of(
+      "reportUnknownTypes", "analyzerChecks", "oldReportUnknownTypes");
 
   public DiagnosticGroups() {}
 
@@ -227,12 +228,25 @@ public class DiagnosticGroups {
           TypeValidator.ALL_DIAGNOSTICS,
           TypeCheck.ALL_DIAGNOSTICS);
 
+  // Run the new type inference, but omit many warnings that are not
+  // found by the old type checker. This makes migration to NTI more manageable.
+  public static final DiagnosticGroup NEW_CHECK_TYPES_COMPATIBILITY_MODE =
+      DiagnosticGroups.registerGroup("newCheckTypesCompatibility",  // undocumented
+          JSTypeCreatorFromJSDoc.COMPATIBLE_DIAGNOSTICS,
+          GlobalTypeInfo.COMPATIBLE_DIAGNOSTICS,
+          NewTypeInference.COMPATIBLE_DIAGNOSTICS);
+
+  public static final DiagnosticGroup NEW_CHECK_TYPES_EXTRA_CHECKS =
+      DiagnosticGroups.registerGroup("newCheckTypesExtraChecks",  // undocumented
+          JSTypeCreatorFromJSDoc.NEW_DIAGNOSTICS,
+          GlobalTypeInfo.NEW_DIAGNOSTICS,
+          NewTypeInference.NEW_DIAGNOSTICS);
+
   // Part of the new type inference
   public static final DiagnosticGroup NEW_CHECK_TYPES =
       DiagnosticGroups.registerGroup("newCheckTypes",
-          JSTypeCreatorFromJSDoc.ALL_DIAGNOSTICS,
-          GlobalTypeInfo.ALL_DIAGNOSTICS,
-          NewTypeInference.ALL_DIAGNOSTICS);
+          NEW_CHECK_TYPES_COMPATIBILITY_MODE,
+          NEW_CHECK_TYPES_EXTRA_CHECKS);
 
   public static final DiagnosticGroup CHECK_TYPES =
       DiagnosticGroups.registerGroup("checkTypes",
@@ -241,7 +255,6 @@ public class DiagnosticGroups {
 
   public static final DiagnosticGroup NEW_CHECK_TYPES_ALL_CHECKS =
       DiagnosticGroups.registerGroup("newCheckTypesAllChecks",
-          JSTypeCreatorFromJSDoc.CONFLICTING_SHAPE_TYPE,
           NewTypeInference.NULLABLE_DEREFERENCE);
 
   static {
@@ -275,7 +288,6 @@ public class DiagnosticGroups {
 //           GlobalTypeInfo.REDECLARED_PROPERTY,
           GlobalTypeInfo.STRUCTDICT_WITHOUT_CTOR,
           GlobalTypeInfo.SUPER_INTERFACES_HAVE_INCOMPATIBLE_PROPERTIES,
-          GlobalTypeInfo.UNDECLARED_NAMESPACE,
           GlobalTypeInfo.UNKNOWN_OVERRIDE,
           GlobalTypeInfo.UNRECOGNIZED_TYPE_NAME,
           NewTypeInference.ASSERT_FALSE,
@@ -320,9 +332,14 @@ public class DiagnosticGroups {
           CheckEventfulObjectDisposal.OVERWRITE_PRIVATE_EVENTFUL_OBJECT,
           CheckEventfulObjectDisposal.UNLISTEN_WITH_ANONBOUND);
 
+  public static final DiagnosticGroup OLD_REPORT_UNKNOWN_TYPES =
+      DiagnosticGroups.registerGroup("oldReportUnknownTypes", // undocumented
+          TypeCheck.UNKNOWN_EXPR_TYPE);
+
   public static final DiagnosticGroup REPORT_UNKNOWN_TYPES =
       DiagnosticGroups.registerGroup("reportUnknownTypes",
-          TypeCheck.UNKNOWN_EXPR_TYPE);
+          TypeCheck.UNKNOWN_EXPR_TYPE,
+          NewTypeInference.UNKNOWN_EXPR_TYPE);
 
   public static final DiagnosticGroup CHECK_VARIABLES =
       DiagnosticGroups.registerGroup("checkVars",
@@ -342,13 +359,20 @@ public class DiagnosticGroups {
           CheckAccessControls.CONST_PROPERTY_REASSIGNED_VALUE,
           ConstCheck.CONST_REASSIGNED_VALUE_ERROR,
           NewTypeInference.CONST_REASSIGNED,
-          NewTypeInference.CONST_PROPERTY_REASSIGNED);
+          NewTypeInference.CONST_PROPERTY_REASSIGNED,
+          NewTypeInference.CONST_PROPERTY_DELETED);
+
+  static final DiagnosticGroup ACCESS_CONTROLS_CONST =
+      DiagnosticGroups.registerGroup("accessControlsConst",
+          CheckAccessControls.CONST_PROPERTY_DELETED,
+          CheckAccessControls.CONST_PROPERTY_REASSIGNED_VALUE);
 
   public static final DiagnosticGroup CONSTANT_PROPERTY =
       DiagnosticGroups.registerGroup("constantProperty",
           CheckAccessControls.CONST_PROPERTY_DELETED,
           CheckAccessControls.CONST_PROPERTY_REASSIGNED_VALUE,
-          NewTypeInference.CONST_PROPERTY_REASSIGNED);
+          NewTypeInference.CONST_PROPERTY_REASSIGNED,
+          NewTypeInference.CONST_PROPERTY_DELETED);
 
   public static final DiagnosticGroup TYPE_INVALIDATION =
       DiagnosticGroups.registerGroup("typeInvalidation",
@@ -396,12 +420,22 @@ public class DiagnosticGroups {
   public static final DiagnosticGroup MISSING_PROVIDE =
       DiagnosticGroups.registerGroup("missingProvide",
           CheckProvides.MISSING_PROVIDE_WARNING,
-          ClosureRewriteModule.MISSING_MODULE,
           ClosureRewriteModule.MISSING_MODULE_OR_PROVIDE);
 
   public static final DiagnosticGroup MISSING_REQUIRE =
       DiagnosticGroups.registerGroup("missingRequire",
           CheckRequiresForConstructors.MISSING_REQUIRE_WARNING);
+
+  public static final DiagnosticGroup STRICT_MISSING_REQUIRE =
+      DiagnosticGroups.registerGroup("strictMissingRequire",
+          CheckRequiresForConstructors.MISSING_REQUIRE_WARNING,
+          CheckRequiresForConstructors.MISSING_REQUIRE_FOR_GOOG_SCOPE,
+          CheckRequiresForConstructors.MISSING_REQUIRE_CALL_WARNING);
+
+  public static final DiagnosticGroup STRICT_REQUIRES =
+      DiagnosticGroups.registerGroup("legacyGoogScopeRequire",
+          CheckRequiresForConstructors.MISSING_REQUIRE_FOR_GOOG_SCOPE,
+          CheckRequiresForConstructors.EXTRA_REQUIRE_WARNING);
 
   public static final DiagnosticGroup EXTRA_REQUIRE =
       DiagnosticGroups.registerGroup("extraRequire",
@@ -484,14 +518,17 @@ public class DiagnosticGroups {
               // checkTypes DiagnosticGroup
               CheckInterfaces.INTERFACE_FUNCTION_NOT_EMPTY,
               CheckInterfaces.INTERFACE_SHOULD_NOT_TAKE_ARGS,
+
+              // TODO(tbreisacher): Make this an error once all Google projects are fixed.
+              ClosureCheckModule.AT_EXPORT_IN_NON_LEGACY_GOOG_MODULE,
+
               CheckMissingSemicolon.MISSING_SEMICOLON,
+              CheckPrimitiveAsObject.NEW_PRIMITIVE_OBJECT,
+              CheckPrimitiveAsObject.PRIMITIVE_OBJECT_DECLARATION,
               CheckPrototypeProperties.ILLEGAL_PROTOTYPE_MEMBER,
               CheckRequiresAndProvidesSorted.REQUIRES_NOT_SORTED,
               CheckRequiresAndProvidesSorted.PROVIDES_NOT_SORTED,
               CheckRequiresAndProvidesSorted.PROVIDES_AFTER_REQUIRES,
-              // TODO(tbreisacher): Move MISSING_REQUIRE_CALL_WARNING to missingRequire group
-              // as soon as projects that enable that group are fixed.
-              CheckRequiresForConstructors.MISSING_REQUIRE_CALL_WARNING,
               CheckUnusedPrivateProperties.UNUSED_PRIVATE_PROPERTY,
               CheckUnusedLabels.UNUSED_LABEL,
               CheckUselessBlocks.USELESS_BLOCK,
@@ -508,8 +545,7 @@ public class DiagnosticGroups {
   // file at a time, for example because they require typechecking.
   public static final DiagnosticGroup ANALYZER_CHECKS =
       DiagnosticGroups.registerGroup("analyzerChecks", // undocumented
-          CheckForInOverArray.FOR_IN_OVER_ARRAY,
-          CheckForInOverArray.ARRAY_PASSED_TO_GOOG_OBJECT,
+          CheckArrayWithGoogObject.ARRAY_PASSED_TO_GOOG_OBJECT,
           CheckNullableReturn.NULLABLE_RETURN,
           CheckNullableReturn.NULLABLE_RETURN_WITH_NAME,
           ImplicitNullabilityCheck.IMPLICITLY_NULLABLE_JSDOC);

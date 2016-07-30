@@ -19,7 +19,6 @@ import com.google.javascript.jscomp.NodeTraversal.AbstractShallowCallback;
 import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.JSDocInfo.Visibility;
 import com.google.javascript.rhino.Node;
-import com.google.javascript.rhino.Token;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -66,7 +65,7 @@ class CheckProvides implements HotSwapCompilerPass {
     @Override
     public void visit(NodeTraversal t, Node n, Node parent) {
       switch (n.getType()) {
-        case Token.CALL:
+        case CALL:
           String providedClassName =
             codingConvention.extractClassNameIfProvide(n, parent);
           if (providedClassName != null) {
@@ -76,17 +75,20 @@ class CheckProvides implements HotSwapCompilerPass {
             containsRequires = true;
           }
           break;
-        case Token.FUNCTION:
+        case FUNCTION:
           // Arrow function can't be constructors
           if (!n.isArrowFunction()) {
             visitFunctionNode(n, parent);
           }
           break;
-        case Token.CLASS:
+        case CLASS:
           visitClassNode(n);
           break;
-        case Token.SCRIPT:
+        case SCRIPT:
           visitScriptNode();
+          break;
+        default:
+          break;
       }
     }
 

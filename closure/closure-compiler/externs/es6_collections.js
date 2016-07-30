@@ -47,7 +47,7 @@ Map.prototype.delete;
 Map.prototype.entries;
 
 /**
- * @param {function(this:THIS, VALUE, KEY, MAP):void} callback
+ * @param {function(this:THIS, VALUE, KEY, MAP)} callback
  * @param {THIS=} opt_thisArg
  * @this {MAP}
  * @template MAP,THIS
@@ -178,7 +178,7 @@ Set.prototype.delete;
 Set.prototype.entries;
 
 /**
- * @param {function(VALUE, VALUE, SET)} callback
+ * @param {function(this: THIS, VALUE, VALUE, SET)} callback
  * @param {THIS=} opt_thisArg
  * @this {SET}
  * @template SET,THIS

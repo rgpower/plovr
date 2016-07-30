@@ -21,7 +21,6 @@ import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.JSDocInfoBuilder;
 import com.google.javascript.rhino.Node;
-import com.google.javascript.rhino.Token;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -124,7 +123,7 @@ final class CheckSideEffects extends AbstractPostOrderCallback
           if (n.isString() || n.isTemplateLit()) {
             msg = "Is there a missing '+' on the previous line?";
           } else if (isSimpleOp) {
-            msg = "The result of the '" + Token.name(n.getType()).toLowerCase() +
+            msg = "The result of the '" + n.getType().toString().toLowerCase() +
                 "' operator is not being used.";
           }
 
@@ -196,7 +195,7 @@ final class CheckSideEffects extends AbstractPostOrderCallback
     CompilerInput input = compiler.getSynthesizedExternsInput();
     name.setStaticSourceFile(input.getSourceFile());
     var.setStaticSourceFile(input.getSourceFile());
-    input.getAstRoot(compiler).addChildrenToBack(var);
+    input.getAstRoot(compiler).addChildToBack(var);
     compiler.reportCodeChange();
   }
 

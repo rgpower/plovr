@@ -28,9 +28,6 @@ import com.google.debugging.sourcemap.proto.Mapping.OriginalMapping;
 import com.google.javascript.rhino.InputId;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
-
-import junit.framework.TestCase;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -41,6 +38,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import junit.framework.TestCase;
 
 /**
  * @author johnlenz@google.com (John Lenz)
@@ -273,46 +271,6 @@ public final class CompilerTest extends TestCase {
         SourceFile.fromCode("test.js", badJsDoc), options);
     assertEquals(0, compiler.getWarningCount());
     assertEquals(0, compiler.getErrorCount());
-  }
-
-  /**
-   * Make sure that non-standard JSDoc annotation is not a hard error nor
-   * warning when it is off.
-   */
-  public void testCoverage() {
-    final String original =
-        "var name = 1;\n" +
-        "function f() {\n" +
-        " var name2 = 2;\n" +
-        "}\n" +
-        "window['f'] = f;\n";
-    final String expected =
-        "var JSCompiler_lcov_fileNames=JSCompiler_lcov_fileNames||[];" +
-        "var JSCompiler_lcov_instrumentedLines=" +
-            "JSCompiler_lcov_instrumentedLines||[];" +
-        "var JSCompiler_lcov_executedLines=JSCompiler_lcov_executedLines||[];" +
-        "var JSCompiler_lcov_data_test_js=[];" +
-        "JSCompiler_lcov_executedLines.push(JSCompiler_lcov_data_test_js);" +
-        "JSCompiler_lcov_instrumentedLines.push(\"04\");" +
-        "JSCompiler_lcov_fileNames.push(\"test.js\");" +
-        "var name=1;" +
-        "function f(){" +
-        "JSCompiler_lcov_data_test_js[2]=true;" +
-        "var name2=2" +
-        "}" +
-        "window[\"f\"]=f;";
-
-    Compiler compiler = new Compiler();
-    CompilerOptions options = new CompilerOptions();
-    options.setInstrumentForCoverage(true);
-
-    compiler.compile(
-        SourceFile.fromCode("extern.js", "var window;"),
-        SourceFile.fromCode("test.js", original), options);
-    assertEquals(0, compiler.getWarningCount());
-    assertEquals(0, compiler.getErrorCount());
-    String outputSource = compiler.toSource();
-    assertEquals(expected, outputSource);
   }
 
   /**
@@ -560,26 +518,11 @@ public final class CompilerTest extends TestCase {
   }
 
   public void testBadDefineOverriding2() throws Exception {
-    List<String> defines = ImmutableList.of("DEF_STRING='xyz");
-    assertCreateDefinesThrowsException(defines);
-  }
-
-  public void testBadDefineOverriding3() throws Exception {
     List<String> defines = ImmutableList.of("=true");
     assertCreateDefinesThrowsException(defines);
   }
 
-  public void testBadDefineOverriding4() throws Exception {
-    List<String> defines = ImmutableList.of("DEF_STRING==");
-    assertCreateDefinesThrowsException(defines);
-  }
-
-  public void testBadDefineOverriding5() throws Exception {
-    List<String> defines = ImmutableList.of("DEF_STRING='");
-    assertCreateDefinesThrowsException(defines);
-  }
-
-  public void testBadDefineOverriding6() throws Exception {
+  public void testBadDefineOverriding3() throws Exception {
     List<String> defines = ImmutableList.of("DEF_STRING='''");
     assertCreateDefinesThrowsException(defines);
   }
@@ -593,7 +536,7 @@ public final class CompilerTest extends TestCase {
       return;
     }
 
-    fail();
+    fail(defines + " didn't fail");
   }
 
   static void assertDefineOverrides(Map<String, Node> expected,
@@ -825,9 +768,58 @@ public final class CompilerTest extends TestCase {
     assertThat(result.errors).isEmpty();
   }
 
+  public void testEs6ModulePathWithOddCharacters() throws Exception {
+    List<SourceFile> inputs = ImmutableList.of(
+        SourceFile.fromCode(
+            "/index[0].js", "import foo from './foo'; foo('hello');"),
+        SourceFile.fromCode("/foo.js",
+            "export default (foo) => { alert(foo); }"));
+
+    List<ModuleIdentifier> entryPoints = ImmutableList.of(
+        ModuleIdentifier.forFile("/index[0]"));
+
+    CompilerOptions options = createNewFlagBasedOptions();
+    options.setLanguageIn(CompilerOptions.LanguageMode.ECMASCRIPT6);
+    options.setLanguageOut(CompilerOptions.LanguageMode.ECMASCRIPT5);
+    options.dependencyOptions.setDependencyPruning(true);
+    options.dependencyOptions.setDependencySorting(true);
+    options.dependencyOptions.setEntryPoints(entryPoints);
+
+    List<SourceFile> externs =
+        AbstractCommandLineRunner.getBuiltinExterns(options.getEnvironment());
+
+    Compiler compiler = new Compiler();
+    compiler.compile(externs, inputs, options);
+
+    Result result = compiler.getResult();
+    assertThat(result.errors).isEmpty();
+  }
+
   public void testGetEmptyResult() {
     Result result = new Compiler().getResult();
     assertThat(result.errors).isEmpty();
+  }
+
+  public void testAnnotation() {
+    Compiler compiler = new Compiler();
+
+    assertThat(compiler.getAnnotation(J2clSourceFileChecker.HAS_J2CL_ANNOTATION_KEY)).isNull();
+
+    compiler.setAnnotation(J2clSourceFileChecker.HAS_J2CL_ANNOTATION_KEY, true);
+    assertThat(compiler.getAnnotation(J2clSourceFileChecker.HAS_J2CL_ANNOTATION_KEY))
+        .isEqualTo(Boolean.TRUE);
+  }
+
+  public void testSetAnnotationTwice() {
+    Compiler compiler = new Compiler();
+
+    compiler.setAnnotation(J2clSourceFileChecker.HAS_J2CL_ANNOTATION_KEY, true);
+    try {
+      compiler.setAnnotation(J2clSourceFileChecker.HAS_J2CL_ANNOTATION_KEY, false);
+      fail("It didn't fail for overwriting existing annotation.");
+    } catch (IllegalArgumentException expected) {
+      return;
+    }
   }
 
   private static CompilerOptions createNewFlagBasedOptions() {

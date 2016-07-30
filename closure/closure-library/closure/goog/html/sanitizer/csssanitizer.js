@@ -23,6 +23,8 @@
 goog.provide('goog.html.sanitizer.CssSanitizer');
 
 goog.require('goog.array');
+goog.require('goog.html.SafeStyle');
+goog.require('goog.html.uncheckedconversions');
 goog.require('goog.object');
 goog.require('goog.string');
 
@@ -207,13 +209,12 @@ goog.html.sanitizer.CssSanitizer.sanitizeProperty_ = function(
  * @param {?CSSStyleDeclaration} cssStyle A CSS style object.
  * @param {function(string, string)=} opt_uriRewriter A URI rewriter that
  *    returns an unwrapped goog.html.SafeUrl.
- * @return {?string} A sanitized inline cssText.
- * @package
+ * @return {!goog.html.SafeStyle} A sanitized inline cssText.
  */
 goog.html.sanitizer.CssSanitizer.sanitizeInlineStyle = function(
     cssStyle, opt_uriRewriter) {
   if (!cssStyle) {
-    return null;
+    return goog.html.SafeStyle.EMPTY;
   }
 
   var cleanCssStyle = document.createElement('div').style;
@@ -233,7 +234,10 @@ goog.html.sanitizer.CssSanitizer.sanitizeInlineStyle = function(
           cleanCssStyle, propName, sanitizedValue);
     }
   }
-  return cleanCssStyle.cssText || null;
+  return goog.html.uncheckedconversions
+      .safeStyleFromStringKnownToSatisfyTypeContract(
+          goog.string.Const.from('Output of CSS sanitizer'),
+          cleanCssStyle.cssText || '');
 };
 
 
@@ -272,7 +276,8 @@ goog.html.sanitizer.CssSanitizer.getCssValue_ = function(cssStyle, propName) {
   var getPropDescriptor = Object.getOwnPropertyDescriptor(
       CSSStyleDeclaration.prototype, 'getPropertyValue');
   if (getPropDescriptor && cssStyle.getPropertyValue) {
-    return getPropDescriptor.value.call(cssStyle, propName);
+    // getPropertyValue on Safari can return null
+    return getPropDescriptor.value.call(cssStyle, propName) || '';
   } else if (cssStyle.getAttribute) {
     // In IE8 and other older browers we make a direct call to getAttribute.
     return String(cssStyle.getAttribute(propName));

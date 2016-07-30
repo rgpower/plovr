@@ -22,7 +22,6 @@ import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -117,8 +116,8 @@ class ProcessTweaks implements CompilerPass {
 
     final String name;
     final String expectedTypeName;
-    final int validNodeTypeA;
-    final int validNodeTypeB;
+    final Token validNodeTypeA;
+    final Token validNodeTypeB;
     final TweakFunction registerFunction;
 
     TweakFunction(String name) {
@@ -126,12 +125,12 @@ class ProcessTweaks implements CompilerPass {
     }
 
     TweakFunction(String name, String expectedTypeName,
-        int validNodeTypeA) {
+        Token validNodeTypeA) {
       this(name, expectedTypeName, validNodeTypeA, Token.EMPTY, null);
     }
 
     TweakFunction(String name, String expectedTypeName,
-        int validNodeTypeA, int validNodeTypeB) {
+        Token validNodeTypeA, Token validNodeTypeB) {
       this(name, expectedTypeName, validNodeTypeA, validNodeTypeB, null);
     }
 
@@ -140,7 +139,7 @@ class ProcessTweaks implements CompilerPass {
     }
 
     TweakFunction(String name, String expectedTypeName,
-        int validNodeTypeA, int validNodeTypeB,
+        Token validNodeTypeA, Token validNodeTypeB,
         TweakFunction registerFunction) {
       this.name = name;
       this.expectedTypeName = expectedTypeName;
@@ -149,7 +148,7 @@ class ProcessTweaks implements CompilerPass {
       this.registerFunction = registerFunction;
     }
 
-    boolean isValidNodeType(int type) {
+    boolean isValidNodeType(Token type) {
       return type == validNodeTypeA || type == validNodeTypeB;
     }
 
@@ -422,6 +421,9 @@ class ProcessTweaks implements CompilerPass {
         case GET_NUMBER:
         case GET_STRING:
           tweakInfo.addGetterCall(t.getSourceName(), tweakFunc, n);
+          break;
+        default:
+          break;
       }
     }
   }

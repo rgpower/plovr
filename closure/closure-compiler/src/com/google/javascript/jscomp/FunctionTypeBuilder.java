@@ -41,14 +41,12 @@ import com.google.javascript.rhino.jstype.JSType;
 import com.google.javascript.rhino.jstype.JSTypeRegistry;
 import com.google.javascript.rhino.jstype.ObjectType;
 import com.google.javascript.rhino.jstype.TemplateType;
-
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Set;
-
 import javax.annotation.Nullable;
 
 /**
@@ -88,6 +86,7 @@ final class FunctionTypeBuilder {
   private boolean makesStructs = false;
   private boolean makesDicts = false;
   private boolean isInterface = false;
+  private boolean isAbstract = false;
   private Node parametersNode = null;
   private ImmutableList<TemplateType> templateTypeNames = ImmutableList.of();
   // TODO(johnlenz): verify we want both template and class template lists instead of a unified
@@ -152,6 +151,21 @@ final class FunctionTypeBuilder {
           "JSC_SAME_INTERFACE_MULTIPLE_IMPLEMENTS",
           "Cannot @implement the same interface more than once\n" +
           "Repeated interface: {0}");
+
+  static final DiagnosticGroup ALL_DIAGNOSTICS = new DiagnosticGroup(
+      EXTENDS_WITHOUT_TYPEDEF,
+      EXTENDS_NON_OBJECT,
+      RESOLVED_TAG_EMPTY,
+      IMPLEMENTS_WITHOUT_CONSTRUCTOR,
+      CONSTRUCTOR_REQUIRED,
+      VAR_ARGS_MUST_BE_LAST,
+      OPTIONAL_ARG_AT_END,
+      INEXISTENT_PARAM,
+      TYPE_REDEFINITION,
+      TEMPLATE_TYPE_DUPLICATED,
+      TEMPLATE_TYPE_EXPECTED,
+      THIS_TYPE_NON_OBJECT,
+      SAME_INTERFACE_MULTIPLE_IMPLEMENTS);
 
   private class ExtendedTypeValidator implements Predicate<JSType> {
     @Override
@@ -332,6 +346,7 @@ final class FunctionTypeBuilder {
     if (info != null) {
       isConstructor = info.isConstructor();
       isInterface = info.isInterface();
+      isAbstract = info.isAbstract();
       makesStructs = info.makesStructs();
       makesDicts = info.makesDicts();
 
@@ -716,14 +731,16 @@ final class FunctionTypeBuilder {
       }
       maybeSetBaseType(fnType);
     } else {
-      fnType = new FunctionBuilder(typeRegistry)
-          .withName(fnName)
-          .withSourceNode(contents.getSourceNode())
-          .withParamsNode(parametersNode)
-          .withReturnType(returnType, returnTypeInferred)
-          .withTypeOfThis(thisType)
-          .withTemplateKeys(templateTypeNames)
-          .build();
+      fnType =
+          new FunctionBuilder(typeRegistry)
+              .withName(fnName)
+              .withSourceNode(contents.getSourceNode())
+              .withParamsNode(parametersNode)
+              .withReturnType(returnType, returnTypeInferred)
+              .withTypeOfThis(thisType)
+              .withTemplateKeys(templateTypeNames)
+              .withIsAbstract(isAbstract)
+              .build();
       maybeSetBaseType(fnType);
     }
 
@@ -761,9 +778,14 @@ final class FunctionTypeBuilder {
    * separate JSType objects for one type.
    */
   private FunctionType getOrCreateConstructor() {
-    FunctionType fnType = typeRegistry.createConstructorType(
-        fnName, contents.getSourceNode(), parametersNode, returnType,
-        classTemplateTypeNames);
+    FunctionType fnType =
+        typeRegistry.createConstructorType(
+            fnName,
+            contents.getSourceNode(),
+            parametersNode,
+            returnType,
+            classTemplateTypeNames,
+            isAbstract);
     JSType existingType = typeRegistry.getType(fnName);
 
     if (makesStructs) {
@@ -816,11 +838,12 @@ final class FunctionTypeBuilder {
    * Determines whether the given JsDoc info declares a function type.
    */
   static boolean isFunctionTypeDeclaration(JSDocInfo info) {
-    return info.getParameterCount() > 0 ||
-        info.hasReturnType() ||
-        info.hasThisType() ||
-        info.isConstructor() ||
-        info.isInterface();
+    return info.getParameterCount() > 0
+        || info.hasReturnType()
+        || info.hasThisType()
+        || info.isConstructor()
+        || info.isInterface()
+        || info.isAbstract();
   }
 
   /**

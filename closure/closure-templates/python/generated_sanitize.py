@@ -11,7 +11,7 @@ except NameError:
 
 
 def escape_uri_helper(v):
-  return urllib.quote(str(v))
+  return urllib.quote(str(v), '')
 
 _ESCAPE_MAP_FOR_ESCAPE_HTML__AND__NORMALIZE_HTML__AND__ESCAPE_HTML_NOSPACE__AND__NORMALIZE_HTML_NOSPACE = {
   '\x00': '&#0;',
@@ -275,7 +275,7 @@ def normalize_uri_helper(value):
 def filter_normalize_uri_helper(value):
   value = str(value)
   if not _FILTER_FOR_FILTER_NORMALIZE_URI.search(value):
-    return '#zSoyz'
+    return 'about:invalid#zSoyz'
 
   return _MATCHER_FOR_NORMALIZE_URI__AND__FILTER_NORMALIZE_URI__AND__FILTER_NORMALIZE_MEDIA_URI.sub(
       _REPLACER_FOR_NORMALIZE_URI__AND__FILTER_NORMALIZE_URI__AND__FILTER_NORMALIZE_MEDIA_URI, value)

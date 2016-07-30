@@ -18,6 +18,7 @@ package com.google.template.soy.jbcsrc;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.template.soy.jbcsrc.BytecodeUtils.OBJECT;
+import static com.google.template.soy.jbcsrc.BytecodeUtils.RENDER_CONTEXT_TYPE;
 import static com.google.template.soy.jbcsrc.BytecodeUtils.SOY_LIST_TYPE;
 import static com.google.template.soy.jbcsrc.BytecodeUtils.classFromAsmType;
 import static com.google.template.soy.jbcsrc.BytecodeUtils.constant;
@@ -26,6 +27,7 @@ import static com.google.template.soy.jbcsrc.BytecodeUtils.logicalNot;
 import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
+import com.google.protobuf.Message;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.soytree.CallNode;
@@ -42,6 +44,7 @@ import com.google.template.soy.types.primitive.NullType;
 import com.google.template.soy.types.primitive.SanitizedType;
 import com.google.template.soy.types.primitive.StringType;
 import com.google.template.soy.types.primitive.UnknownType;
+import com.google.template.soy.types.proto.SoyProtoTypeImpl;
 
 import org.objectweb.asm.Label;
 import org.objectweb.asm.Opcodes;
@@ -60,8 +63,16 @@ import java.util.List;
  * but depending on the type they may also support additional unboxing conversions.
  */
 class SoyExpression extends Expression {
+  // TODO(msamuel): move this variable into Kind.
   private static final ImmutableSet<Kind> STRING_KINDS =
-      Sets.immutableEnumSet(Kind.STRING, Kind.HTML, Kind.ATTRIBUTES, Kind.JS, Kind.CSS, Kind.URI);
+      Sets.immutableEnumSet(
+          Kind.STRING,
+          Kind.HTML,
+          Kind.ATTRIBUTES,
+          Kind.JS,
+          Kind.CSS,
+          Kind.URI,
+          Kind.TRUSTED_RESOURCE_URI);
 
   static SoyExpression forSoyValue(SoyType type, Expression delegate) {
     return new SoyExpression(type, type.javaType(), delegate, Optional.<Expression>absent());
@@ -89,6 +100,15 @@ class SoyExpression extends Expression {
 
   static SoyExpression forList(ListType listType, Expression delegate) {
     return new SoyExpression(listType, List.class, delegate);
+  }
+
+  static SoyExpression forProto(
+      SoyProtoTypeImpl protoType,
+      Class<? extends Message> unboxedType,
+      Expression delegate,
+      Expression renderContext) {
+    checkArgument(renderContext.resultType().equals(RENDER_CONTEXT_TYPE));
+    return new SoyExpression(protoType, unboxedType, delegate, Optional.of(renderContext));
   }
 
   /**
@@ -246,6 +266,10 @@ class SoyExpression extends Expression {
     return SoyValue.class.isAssignableFrom(clazz);
   }
 
+  boolean isKnownProto() {
+    return soyType instanceof SoyProtoTypeImpl;
+  }
+
   /**
    * Returns {@code true} if the expression is known to be an {@linkplain #isKnownInt() int} or a
    * {@linkplain #isKnownFloat() float} at compile time.
@@ -275,8 +299,7 @@ class SoyExpression extends Expression {
                 @Override
                 void doGen(CodeBuilder adapter) {
                   delegate.gen(adapter);
-                  adapter.dup();
-                  adapter.ifNull(end);
+                  BytecodeUtils.nullCoalesce(adapter, end);
                 }
               })
           .asNonNullable()
@@ -302,6 +325,30 @@ class SoyExpression extends Expression {
     }
     if (isKnownList()) {
       return asBoxed(MethodRef.LIST_IMPL_FOR_PROVIDER_LIST.invoke(delegate));
+    }
+    if (isKnownProto()) {
+      // dereference the context early in case our caller screwed up and we don't have one.
+      final Expression context = renderContext.get();
+      return asBoxed(
+          new Expression(ProtoUtils.RENDER_CONTEXT_BOX.returnType(), delegate.features()) {
+            @Override
+            void doGen(CodeBuilder adapter) {
+              delegate.gen(adapter);
+              context.gen(adapter);
+              // swap the two top items of the stack.
+              // This ensures that the base expression is gen'd at a stack depth of zero, which is
+              // important if it contains a label for a reattach point or if this is prefixed with a
+              // null check.
+              // TODO(lukes): this is super lame and is due to the fact that we generate expressions
+              // with complex control flow that isn't completely encapsulated.   Ideas: inline all
+              // the null checks so that the control flow is more encapsulated (though this will add
+              // a lot of redundancy), promote the concept of an expression that must be gen()'d at
+              // a depth of zero to a top level concept (an Expression Feature), so that we can flag
+              // it more eagerly, something else?
+              adapter.swap();
+              ProtoUtils.RENDER_CONTEXT_BOX.invokeUnchecked(adapter);
+            }
+          });
     }
     throw new IllegalStateException(
         "cannot box soy expression of type " + soyType + " with runtime type " + clazz);
@@ -470,25 +517,15 @@ class SoyExpression extends Expression {
     } else {
       // else it must be a List/Proto/String all of which must preserve null through the unboxing
       // operation
-      final Label ifNull = new Label();
+      final Label end = new Label();
       Expression nonNullDelegate =
           new Expression(resultType(), features()) {
             @Override void doGen(CodeBuilder adapter) {
               delegate.gen(adapter);
-              adapter.dup();
-              adapter.ifNull(ifNull);
+              BytecodeUtils.nullCoalesce(adapter, end);
             }
           };
-      final SoyExpression unboxAs = withSource(nonNullDelegate).asNonNullable().unboxAs(asType);
-      return unboxAs.withSource(
-          new Expression(unboxAs.resultType(), features()) {
-            @Override
-            void doGen(CodeBuilder adapter) {
-              unboxAs.gen(adapter);
-              adapter.mark(ifNull);
-              adapter.checkCast(unboxAs.resultType()); // insert a cast to force type agreement
-            }
-          });
+      return withSource(nonNullDelegate).asNonNullable().unboxAs(asType).asNullable().labelEnd(end);
     }
     throw new UnsupportedOperationException("Can't unbox " + clazz + " as " + asType);
   }
@@ -510,49 +547,15 @@ class SoyExpression extends Expression {
         asListType, delegate.cast(SOY_LIST_TYPE).invoke(MethodRef.SOY_LIST_AS_JAVA_LIST));
   }
 
-  /**
-   * A generic unbox operator.  Doesn't always work since not every type has a canonical unboxed
-   * representation and we don't always have enough type information.
-   *
-   * <p>For example, unboxed 'int' is always a java {@code long}, but unboxed '?' is undefined.
-   */
-  Optional<SoyExpression> tryUnbox() {
-    if (!isBoxed()) {
-      return Optional.of(this);
-    }
-    switch (soyType.getKind()) {
-      case OBJECT:
-      case RECORD:
-      case UNKNOWN:
-      case ANY:
-      case MAP:
-        return Optional.absent();
-      case CSS:
-      case ATTRIBUTES:
-      case HTML:
-      case JS:
-      case URI:
-      case STRING:
-        return Optional.of(unboxAs(String.class));
-      case BOOL:
-        return Optional.of(unboxAs(boolean.class));
-      case ENUM:
-      case INT:
-        return Optional.of(unboxAs(long.class));
-      case UNION:
-        // TODO(lukes): special case nullable reference types
-        // fall-through
-        return Optional.absent();
-      case FLOAT:
-        return Optional.of(unboxAs(double.class));
-      case LIST:
-        return Optional.of(unboxAs(List.class));
-      case NULL:
-        return Optional.of(NULL);
-      case ERROR:
-      default:
-        throw new AssertionError();
-    }
+  private SoyExpression unboxAsProto(Class<? extends Message> asType) {
+    return forProto(
+        (SoyProtoTypeImpl) soyType,
+        asType,
+        delegate
+            .cast(SoyProtoTypeImpl.Value.class)
+            .invoke(ProtoUtils.SOY_PROTO_VALUE_GET_PROTO)
+            .cast(asType),
+        renderContext.get());
   }
 
   /**
@@ -560,6 +563,13 @@ class SoyExpression extends Expression {
    */
   SoyExpression withSource(Expression expr) {
     return new SoyExpression(soyType, clazz, expr, renderContext);
+  }
+
+  SoyExpression withRenderContext(Expression renderContext) {
+    if (this.renderContext.isPresent() && this.renderContext.get().equals(renderContext)) {
+      return this;
+    }
+    return new SoyExpression(soyType, clazz, delegate, Optional.of(renderContext));
   }
 
   /**
@@ -626,11 +636,6 @@ class SoyExpression extends Expression {
 
     @Override final SoyExpression unboxAs(Class<?> asType) {
       return unboxed.unboxAs(asType);
-    }
-
-    @Override
-    Optional<SoyExpression> tryUnbox() {
-      return Optional.of(unboxed);
     }
 
     @Override SoyExpression coerceToBoolean() {

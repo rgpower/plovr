@@ -16,10 +16,12 @@
 
 package com.google.javascript.jscomp;
 
+import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableMap;
 import com.google.javascript.jscomp.ReferenceCollectingCallback.ReferenceCollection;
 import com.google.javascript.jscomp.TypeValidator.TypeMismatch;
+import com.google.javascript.jscomp.deps.ModuleLoader;
 import com.google.javascript.jscomp.parsing.Config;
 import com.google.javascript.jscomp.parsing.parser.trees.Comment;
 import com.google.javascript.jscomp.type.ReverseAbstractInterpreter;
@@ -28,11 +30,10 @@ import com.google.javascript.rhino.InputId;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.TypeIRegistry;
 import com.google.javascript.rhino.jstype.JSTypeRegistry;
-
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
 import javax.annotation.Nullable;
 
 /**
@@ -47,12 +48,9 @@ public abstract class AbstractCompiler implements SourceExcerptProvider {
   static final DiagnosticType READ_ERROR = DiagnosticType.error(
       "JSC_READ_ERROR", "Cannot read: {0}");
 
-  boolean needsEs6Runtime = false;
-  boolean needsEs6DartRuntime = false;
+  private final Map<String, Object> annotationMap = new HashMap<>();
 
-  /**
-   * Will be called before each pass runs.
-   */
+  /** Will be called before each pass runs. */
   abstract void beforePass(String passName);
 
   /**
@@ -179,18 +177,18 @@ public abstract class AbstractCompiler implements SourceExcerptProvider {
   /**
    * Used only by the new type inference
    */
-  abstract GlobalTypeInfo getSymbolTable();
+  abstract CompilerPass getSymbolTable();
 
-  abstract void setSymbolTable(GlobalTypeInfo symbolTable);
+  abstract void setSymbolTable(CompilerPass symbolTable);
 
   /**
    * Used by three passes that run in sequence (optimize-returns,
    * optimize-parameters, remove-unused-variables), to avoid having them
    * recompute it independently.
    */
-  abstract SimpleDefinitionFinder getSimpleDefinitionFinder();
+  abstract DefinitionUseSiteFinder getDefinitionFinder();
 
-  abstract void setSimpleDefinitionFinder(SimpleDefinitionFinder defFinder);
+  abstract void setDefinitionFinder(DefinitionUseSiteFinder defFinder);
 
   /**
    * Parses code for injecting.
@@ -266,11 +264,6 @@ public abstract class AbstractCompiler implements SourceExcerptProvider {
 
   /** Passes that do cross-scope modifications use this (eg, InlineVariables) */
   abstract void reportChangeToEnclosingScope(Node n);
-
-  /**
-   * Returns true if compiling in IDE mode.
-   */
-  abstract boolean isIdeMode();
 
   /**
    * Represents the different contexts for which the compiler could have
@@ -447,15 +440,14 @@ public abstract class AbstractCompiler implements SourceExcerptProvider {
    *
    * @param resourceName The name of the library. For example, if "base" is
    *     is specified, then we load js/base.js
-   * @param normalizeAndUniquifyNames Whether to normalize the library code and make
-   *     names unique.
-   * @return If new code was injected, returns the last expression node of the
+   * @param force Inject the library even if compiler options say not to.
+   * @return The last node of the most-recently-injected runtime library.
+   *     If new code was injected, this will be the last expression node of the
    *     library. If the caller needs to add additional code, they should add
-   *     it as the next sibling of this node. If new code was not injected,
-   *     returns null.
+   *     it as the next sibling of this node. If no runtime libraries have been
+   *     injected, then null is returned.
    */
-  abstract Node ensureLibraryInjected(String resourceName,
-      boolean normalizeAndUniquifyNames);
+  abstract Node ensureLibraryInjected(String resourceName, boolean force);
 
   /**
    * Sets the names of the properties defined in externs.
@@ -487,4 +479,33 @@ public abstract class AbstractCompiler implements SourceExcerptProvider {
     * can be overriden by values specifically set in the CompilerOptions.
     */
    abstract ImmutableMap<String, Node> getDefaultDefineValues();
+
+  /**
+   * Gets the module loader.
+   */
+  abstract ModuleLoader getModuleLoader();
+
+  /**
+   * Sets an annotation for the given key.
+   *
+   * @param key the annotation key
+   * @param object the object to store as the annotation
+   */
+  void setAnnotation(String key, Object object) {
+    Preconditions.checkArgument(object != null, "The stored annotation value cannot be null.");
+    Preconditions.checkArgument(
+        !annotationMap.containsKey(key), "Cannot overwrite the existing annotation '%s'.", key);
+    annotationMap.put(key, object);
+  }
+
+  /**
+   * Gets the annotation for the given key.
+   *
+   * @param key the annotation key
+   * @return the annotation object for the given key if it has been set, or null
+   */
+  @Nullable
+  Object getAnnotation(String key) {
+    return annotationMap.get(key);
+  }
 }

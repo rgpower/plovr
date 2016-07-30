@@ -35,8 +35,10 @@ import com.google.gson.Gson;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 import com.google.javascript.jscomp.CompilerOptions.JsonStreamMode;
+import com.google.javascript.jscomp.CompilerOptions.OutputJs;
 import com.google.javascript.jscomp.CompilerOptions.TweakProcessing;
 import com.google.javascript.jscomp.deps.ClosureBundler;
+import com.google.javascript.jscomp.deps.ModuleLoader;
 import com.google.javascript.jscomp.deps.SourceCodeEscapers;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.TokenStream;
@@ -155,6 +157,7 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
     "browser/w3c_dom1.js",
     "browser/w3c_dom2.js",
     "browser/w3c_dom3.js",
+    "browser/w3c_dom4.js",
     "browser/gecko_dom.js",
     "browser/ie_dom.js",
     "browser/webkit_dom.js",
@@ -317,20 +320,14 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
   protected abstract void addWhitelistWarningsGuard(
       CompilerOptions options, File whitelistFile);
 
-  /**
-   * Sets options based on the configurations set flags API.
-   * Called during the run() run() method.
-   * If you want to ignore the flags API, or interpret flags your own way,
-   * then you should override this method.
-   */
-  protected void setRunOptions(CompilerOptions options) throws IOException {
-    DiagnosticGroups diagnosticGroups = getDiagnosticGroups();
-
-    if (config.warningGuards != null) {
-      for (FlagEntry<CheckLevel> entry : config.warningGuards) {
+  protected static void setWarningGuardOptions(
+      CompilerOptions options,
+      ArrayList<FlagEntry<CheckLevel>> warningGuards,
+      DiagnosticGroups diagnosticGroups) {
+    if (warningGuards != null) {
+      for (FlagEntry<CheckLevel> entry : warningGuards) {
         if ("*".equals(entry.value)) {
-          Set<String> groupNames =
-              diagnosticGroups.getRegisteredGroups().keySet();
+          Set<String> groupNames = diagnosticGroups.getRegisteredGroups().keySet();
           for (String groupName : groupNames) {
             if (!DiagnosticGroups.wildcardExcludedGroups.contains(groupName)) {
               diagnosticGroups.setWarningLevel(options, groupName, entry.flag);
@@ -341,6 +338,18 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
         }
       }
     }
+  }
+
+  /**
+   * Sets options based on the configurations set flags API.
+   * Called during the run() run() method.
+   * If you want to ignore the flags API, or interpret flags your own way,
+   * then you should override this method.
+   */
+  protected void setRunOptions(CompilerOptions options) throws IOException {
+    DiagnosticGroups diagnosticGroups = getDiagnosticGroups();
+
+    setWarningGuardOptions(options, config.warningGuards, diagnosticGroups);
 
     if (!config.warningsWhitelistFile.isEmpty()) {
       addWhitelistWarningsGuard(options, new File(config.warningsWhitelistFile));
@@ -619,13 +628,24 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
    * with the same path inside different zips are considered duplicate inputs.
    * Parameter {@code sourceFiles} may be modified if duplicates are removed.
    */
-  public static List<JSError> removeDuplicateZipEntries(List<SourceFile> sourceFiles)
-      throws IOException {
+  public static List<JSError> removeDuplicateZipEntries(
+      List<SourceFile> sourceFiles, List<JsModuleSpec> jsModuleSpecs) throws IOException {
     ImmutableList.Builder<JSError> errors = ImmutableList.builder();
     Map<String, SourceFile> sourceFilesByName = new HashMap<>();
-    Iterator<SourceFile> fileIterator = sourceFiles.listIterator();
+    Iterator<SourceFile> fileIterator = sourceFiles.iterator();
+    int currentFileIndex = 0;
+    Iterator<JsModuleSpec> moduleIterator = jsModuleSpecs.iterator();
+    // Tracks the total number of js files for current module and all the previous modules.
+    int cumulatedJsFileNum = 0;
+    JsModuleSpec currentModule  = null;
     while (fileIterator.hasNext()) {
       SourceFile sourceFile = fileIterator.next();
+      currentFileIndex++;
+      // Check whether we reached the next module.
+      if (moduleIterator.hasNext() && currentFileIndex > cumulatedJsFileNum) {
+        currentModule = moduleIterator.next();
+        cumulatedJsFileNum += currentModule.numJsFiles;
+      }
       String fullPath = sourceFile.getName();
       if (!fullPath.contains("!/")) {
         // Not a zip file
@@ -640,6 +660,9 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
           errors.add(JSError.make(
               SourceFile.DUPLICATE_ZIP_CONTENTS, firstSourceFile.getName(), sourceFile.getName()));
           fileIterator.remove();
+          if (currentModule != null) {
+            currentModule.numJsFiles--;
+          }
         } else {
           errors.add(JSError.make(
               CONFLICTING_DUPLICATE_ZIP_CONTENTS, firstSourceFile.getName(), sourceFile.getName()));
@@ -722,7 +745,7 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
         inputs.add(SourceFile.fromCode(jsonFile.getPath(), jsonFile.getSrc()));
       }
     }
-    for (JSError error : removeDuplicateZipEntries(inputs)) {
+    for (JSError error : removeDuplicateZipEntries(inputs, jsModuleSpecs)) {
       compiler.report(error);
     }
     return inputs;
@@ -952,6 +975,12 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
       String wrapper, String codePlaceholder,
       @Nullable Function<String, String> escaper)
       throws IOException {
+    if (compiler.getOptions().outputJs == OutputJs.SENTINEL) {
+      out.append("// No JS output because the compiler was run in checks-only mode.\n");
+      return;
+    }
+    Preconditions.checkState(compiler.getOptions().outputJs == OutputJs.NORMAL);
+
     int pos = wrapper.indexOf(codePlaceholder);
     if (pos != -1) {
       String prefix = "";
@@ -1174,7 +1203,7 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
       outputBundle();
       outputModuleGraphJson();
       return 0;
-    } else if (!options.checksOnly && result.success) {
+    } else if (options.outputJs != OutputJs.NONE && result.success) {
       outputModuleGraphJson();
       if (modules == null) {
         outputSingleBinary(options);
@@ -1202,6 +1231,9 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
 
       // Output the variable and property name maps if requested.
       outputNameMaps();
+
+      // Output the ReplaceStrings map if requested
+      outputStringMap();
 
       // Output the manifest and bundle files if requested.
       outputManifest();
@@ -1568,7 +1600,8 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
    */
   private void outputSourceMap(B options, String associatedName)
       throws IOException {
-    if (Strings.isNullOrEmpty(options.sourceMapOutputPath)) {
+    if (Strings.isNullOrEmpty(options.sourceMapOutputPath)
+        || options.sourceMapOutputPath.equals("/dev/null")) {
       return;
     }
 
@@ -1677,11 +1710,20 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
   }
 
   /**
+   * Outputs the string map generated by the {@link ReplaceStrings} pass if an output path exists.
+   */
+  private void outputStringMap() throws IOException {
+    if (!config.stringMapOutputPath.isEmpty() && compiler.getStringMap() != null) {
+      compiler.getStringMap().save(config.stringMapOutputPath);
+    }
+  }
+
+  /**
    * Create a map of constant names to constant values from a textual
    * description of the map.
    *
    * @param definitions A list of overriding definitions for defines in
-   *     the form <name>[=<val>], where <val> is a number, boolean, or
+   *     the form {@code <name>[=<val>]}, where {@code <val>} is a number, boolean, or
    *     single-quoted string without single quotes.
    */
   @VisibleForTesting
@@ -1732,6 +1774,15 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
             continue;
           } catch (NumberFormatException e) {
             // do nothing, it will be caught at the end
+          }
+
+          if (defValue.length() > 0) {
+            if (tweaks) {
+              options.setTweakToStringLiteral(defName, defValue);
+            } else {
+              options.setDefineToStringLiteral(defName, defValue);
+            }
+            continue;
           }
         }
       }
@@ -2048,7 +2099,7 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
 
     /**
      * A JavaScript module specification. The format is
-     * <name>:<num-js-files>[:[<dep>,...][:]]]. Module names must be
+     * {@code <name>:<num-js-files>[:[<dep>,...][:]]]}. Module names must be
      * unique. Each dep is the name of a module that this module
      * depends on. Modules must be listed in dependency order, and JS
      * source files must be listed in the corresponding order. Where
@@ -2126,6 +2177,18 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
       return this;
     }
 
+
+    private String stringMapOutputPath = "";
+
+    /**
+     * File where the serialized version of the string map produced by the ReplaceStrings pass
+     * should be saved.
+     */
+    public CommandLineConfig setStringMapOutputFile(String stringMapOutputPath) {
+      this.stringMapOutputPath = stringMapOutputPath;
+      return this;
+    }
+
     private CodingConvention codingConvention = CodingConventions.getDefault();
 
     /**
@@ -2177,7 +2240,7 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
 
     /**
      * Prefix for filenames of compiled JS modules.
-     * <module-name>.js will be appended to this prefix. Directories
+     * {@code <module-name>.js} will be appended to this prefix. Directories
      * will be created as needed. Use with --module
      */
     public CommandLineConfig setModuleOutputPathPrefix(String moduleOutputPathPrefix) {
@@ -2248,11 +2311,11 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
     private final List<String> define = new ArrayList<>();
 
     /**
-     * Override the value of a variable annotated @define.
-     * The format is <name>[=<val>], where <name> is the name of a @define
-     * variable and <val> is a boolean, number, or a single-quoted string
-     * that contains no single quotes. If [=<val>] is omitted,
-     * the variable is marked true
+     * Override the value of a variable annotated @define.  The format
+     * is {@code <name>[=<val>]}, where {@code <name>} is the name of
+     * a @define variable and {@code <val>} is a boolean, number, or a
+     * single-quoted string that contains no single quotes. If
+     * {@code [=<val>]} is omitted, the variable is marked true
      */
     public CommandLineConfig setDefine(List<String> define) {
       this.define.clear();
@@ -2264,9 +2327,10 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
 
     /**
      * Override the default value of a registered tweak. The format is
-     * <name>[=<val>], where <name> is the ID of a tweak and <val> is a boolean,
-     * number, or a single-quoted string that contains no single quotes. If
-     * [=<val>] is omitted, then true is assumed.
+     * {@code <name>[=<val>]}, where {@code <name>} is the ID of a
+     * tweak and {@code <val>} is a boolean, number, or a
+     * single-quoted string that contains no single quotes. If
+     * {@code [=<val>]} is omitted, then true is assumed.
      */
     public CommandLineConfig setTweak(List<String> tweak) {
       this.tweak.clear();
@@ -2427,7 +2491,7 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
       return this;
     }
 
-    private List<String> moduleRoots = ImmutableList.of(ES6ModuleLoader.DEFAULT_FILENAME_PREFIX);
+    private List<String> moduleRoots = ImmutableList.of(ModuleLoader.DEFAULT_FILENAME_PREFIX);
 
     /**
      * Sets the module roots.
@@ -2588,12 +2652,12 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
   /**
    * Represents a specification for a js module.
    */
-  protected static class JsModuleSpec {
+  public static class JsModuleSpec {
     private final String name;
     // Number of input files, including js and zip files.
     private final int numInputs;
     private final ImmutableList<String> deps;
-    // Number of input js files. All zip files should be expended.
+    // Number of input js files. All zip files should be expanded.
     private int numJsFiles;
 
     private JsModuleSpec(String name, int numInputs, ImmutableList<String> deps) {

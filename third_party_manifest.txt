@@ -1,7 +1,6 @@
 base.js
 caja/string/html/htmlparser.js
 caja/string/html/htmlsanitizer.js
-deps.js
 dojo/dom/query.js
 loremipsum/text/loremipsum.js
 mochikit/async/deferred.js

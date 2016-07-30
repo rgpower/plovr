@@ -40,6 +40,7 @@ goog.require('goog.dom.NodeType');
 goog.require('goog.dom.TagName');
 goog.require('goog.dom.safe');
 goog.require('goog.html.SafeHtml');
+goog.require('goog.html.uncheckedconversions');
 goog.require('goog.math.Coordinate');
 goog.require('goog.math.Size');
 goog.require('goog.object');
@@ -167,6 +168,19 @@ goog.dom.getRequiredElementHelper_ = function(doc, id) {
  * @deprecated Use {@link goog.dom.getElement} instead.
  */
 goog.dom.$ = goog.dom.getElement;
+
+
+/**
+ * Gets elements by tag name.
+ * @param {goog.dom.TagName} tagName
+ * @param {(!Document|!Element)=} opt_parent Parent element or document where to
+ *     look for elements. Defaults to document.
+ * @return {!IArrayLike<!Element>}
+ */
+goog.dom.getElementsByTagName = function(tagName, opt_parent) {
+  var parent = opt_parent || document;
+  return parent.getElementsByTagName(tagName);
+};
 
 
 /**
@@ -347,7 +361,25 @@ goog.dom.$$ = goog.dom.getElementsByTagNameAndClass;
 
 
 /**
- * Sets multiple properties on a node.
+ * Sets multiple properties, and sometimes attributes, on an element. Note that
+ * properties are simply object properties on the element instance, while
+ * attributes are visible in the DOM. Many properties map to attributes with the
+ * same names, some with different names, and there are also unmappable cases.
+ *
+ * This method sets properties by default (which means that custom attributes
+ * are not supported). These are the exeptions (some of which is legacy):
+ * - "style": Even though this is an attribute name, it is translated to a
+ *   property, "style.cssText". Note that this property sanitizes and formats
+ *   its value, unlike the attribute.
+ * - "class": This is an attribute name, it is translated to the "className"
+ *   property.
+ * - "for": This is an attribute name, it is translated to the "htmlFor"
+ *   property.
+ * - Entries in {@see goog.dom.DIRECT_ATTRIBUTE_MAP_} are set as attributes,
+ *   this is probably due to browser quirks.
+ * - "aria-*", "data-*": Always set as attributes, they have no property
+ *   counterparts.
+ *
  * @param {Element} element DOM node to set properties on.
  * @param {Object} properties Hash of property:value pairs.
  */
@@ -677,6 +709,7 @@ goog.dom.getWindow_ = function(doc) {
 };
 
 
+// TODO(jakubvrana): Allow only members of goog.dom.TagName in tagName.
 /**
  * Returns a dom node with a set of attributes.  This function accepts varargs
  * for subsequent nodes to be added.  Subsequent nodes will be added to the
@@ -685,6 +718,30 @@ goog.dom.getWindow_ = function(doc) {
  * So:
  * <code>createDom('div', null, createDom('p'), createDom('p'));</code>
  * would return a div with two child paragraphs
+ *
+ * For passing properties, please see {@link goog.dom.setProperties} for more
+ * information.
+ *
+ * @param {string} tagName Tag to create.
+ * @param {(Object|Array<string>|string)=} opt_properties If object, then a map
+ *     of name-value pairs for properties. If a string, then this is the
+ *     className of the new element. If an array, the elements will be joined
+ *     together as the className of the new element.
+ * @param {...(Object|string|Array|NodeList)} var_args Further DOM nodes or
+ *     strings for text nodes. If one of the var_args is an array or NodeList,
+ *     its elements will be added as childNodes instead.
+ * @return {!Element} Reference to a DOM node.
+ */
+goog.dom.createDom = function(tagName, opt_properties, var_args) {
+  return goog.dom.createDom_(document, arguments);
+};
+
+
+/**
+ * A version of createDom where the tag name is a plain string and not a member
+ * of goog.dom.TagName. Currently, this function is the same as createDom but in
+ * the future, createDom will return a more specific type (e.g. HTMLImageElement
+ * for goog.TagName.IMG) while createUntypedDom will still return Element.
  *
  * @param {string} tagName Tag to create.
  * @param {(Object|Array<string>|string)=} opt_attributes If object, then a map
@@ -696,7 +753,7 @@ goog.dom.getWindow_ = function(doc) {
  *     its elements will be added as childNodes instead.
  * @return {!Element} Reference to a DOM node.
  */
-goog.dom.createDom = function(tagName, opt_attributes, var_args) {
+goog.dom.createUntypedDom = function(tagName, opt_attributes, var_args) {
   return goog.dom.createDom_(document, arguments);
 };
 
@@ -710,7 +767,7 @@ goog.dom.createDom = function(tagName, opt_attributes, var_args) {
  * @private
  */
 goog.dom.createDom_ = function(doc, args) {
-  var tagName = args[0];
+  var tagName = String(args[0]);
   var attributes = args[1];
 
   // Internet Explorer is dumb:
@@ -797,8 +854,8 @@ goog.dom.append_ = function(doc, parent, args, startIndex) {
 /**
  * Alias for {@code createDom}.
  * @param {string} tagName Tag to create.
- * @param {(string|Object)=} opt_attributes If object, then a map of name-value
- *     pairs for attributes. If a string, then this is the className of the new
+ * @param {(string|Object)=} opt_properties If object, then a map of name-value
+ *     pairs for properties. If a string, then this is the className of the new
  *     element.
  * @param {...(Object|string|Array|NodeList)} var_args Further DOM nodes or
  *     strings for text nodes. If one of the var_args is an array, its
@@ -815,7 +872,7 @@ goog.dom.$dom = goog.dom.createDom;
  * @return {!Element} The new element.
  */
 goog.dom.createElement = function(name) {
-  return document.createElement(name);
+  return document.createElement(String(name));
 };
 
 
@@ -873,6 +930,26 @@ goog.dom.createTable_ = function(doc, rows, columns, fillWithNbsp) {
     tbody.appendChild(tr);
   }
   return table;
+};
+
+
+
+/**
+ * Creates a new Node from constant strings of HTML markup.
+ * @param {...!goog.string.Const} var_args The HTML strings to concatenate then
+ *     convert into a node.
+ * @return {!Node}
+ */
+goog.dom.constHtmlToNode = function(var_args) {
+  var stringArray = goog.array.map(arguments, goog.string.Const.unwrap);
+  var safeHtml =
+      goog.html.uncheckedconversions
+          .safeHtmlFromStringKnownToSatisfyTypeContract(
+              goog.string.Const.from(
+                  'Constant HTML string, that gets turned into a ' +
+                  'Node later, so it will be automatically balanced.'),
+              stringArray.join(''));
+  return goog.dom.safeHtmlToNode(safeHtml);
 };
 
 
@@ -985,31 +1062,31 @@ goog.dom.canHaveChildren = function(node) {
     return false;
   }
   switch (/** @type {!Element} */ (node).tagName) {
-    case goog.dom.TagName.APPLET:
-    case goog.dom.TagName.AREA:
-    case goog.dom.TagName.BASE:
-    case goog.dom.TagName.BR:
-    case goog.dom.TagName.COL:
-    case goog.dom.TagName.COMMAND:
-    case goog.dom.TagName.EMBED:
-    case goog.dom.TagName.FRAME:
-    case goog.dom.TagName.HR:
-    case goog.dom.TagName.IMG:
-    case goog.dom.TagName.INPUT:
-    case goog.dom.TagName.IFRAME:
-    case goog.dom.TagName.ISINDEX:
-    case goog.dom.TagName.KEYGEN:
-    case goog.dom.TagName.LINK:
-    case goog.dom.TagName.NOFRAMES:
-    case goog.dom.TagName.NOSCRIPT:
-    case goog.dom.TagName.META:
-    case goog.dom.TagName.OBJECT:
-    case goog.dom.TagName.PARAM:
-    case goog.dom.TagName.SCRIPT:
-    case goog.dom.TagName.SOURCE:
-    case goog.dom.TagName.STYLE:
-    case goog.dom.TagName.TRACK:
-    case goog.dom.TagName.WBR:
+    case String(goog.dom.TagName.APPLET):
+    case String(goog.dom.TagName.AREA):
+    case String(goog.dom.TagName.BASE):
+    case String(goog.dom.TagName.BR):
+    case String(goog.dom.TagName.COL):
+    case String(goog.dom.TagName.COMMAND):
+    case String(goog.dom.TagName.EMBED):
+    case String(goog.dom.TagName.FRAME):
+    case String(goog.dom.TagName.HR):
+    case String(goog.dom.TagName.IMG):
+    case String(goog.dom.TagName.INPUT):
+    case String(goog.dom.TagName.IFRAME):
+    case String(goog.dom.TagName.ISINDEX):
+    case String(goog.dom.TagName.KEYGEN):
+    case String(goog.dom.TagName.LINK):
+    case String(goog.dom.TagName.NOFRAMES):
+    case String(goog.dom.TagName.NOSCRIPT):
+    case String(goog.dom.TagName.META):
+    case String(goog.dom.TagName.OBJECT):
+    case String(goog.dom.TagName.PARAM):
+    case String(goog.dom.TagName.SCRIPT):
+    case String(goog.dom.TagName.SOURCE):
+    case String(goog.dom.TagName.STYLE):
+    case String(goog.dom.TagName.TRACK):
+    case String(goog.dom.TagName.WBR):
       return false;
   }
   return true;
@@ -2283,6 +2360,20 @@ goog.dom.DomHelper.prototype.$ = goog.dom.DomHelper.prototype.getElement;
 
 
 /**
+ * Gets elements by tag name.
+ * @param {goog.dom.TagName} tagName
+ * @param {(!Document|!Element)=} opt_parent Parent element or document where to
+ *     look for elements. Defaults to document of this DomHelper.
+ * @return {!IArrayLike<!Element>}
+ */
+goog.dom.DomHelper.prototype.getElementsByTagName =
+    function(tagName, opt_parent) {
+  var parent = opt_parent || this.document_;
+  return parent.getElementsByTagName(tagName);
+};
+
+
+/**
  * Looks up elements by both tag and class name, using browser native functions
  * ({@code querySelectorAll}, {@code getElementsByTagName} or
  * {@code getElementsByClassName}) where possible. The returned array is a live
@@ -2430,6 +2521,28 @@ goog.dom.DomHelper.prototype.createDom = function(
 
 
 /**
+ * A version of createDom where the tag name is a plain string and not a member
+ * of goog.dom.TagName. Currently, this function is the same as createDom but in
+ * the future, createDom will return a more specific type (e.g. HTMLImageElement
+ * for goog.TagName.IMG) while createUntypedDom will still return Element.
+ *
+ * @param {string} tagName Tag to create.
+ * @param {(Object|Array<string>|string)=} opt_attributes If object, then a map
+ *     of name-value pairs for attributes. If a string, then this is the
+ *     className of the new element. If an array, the elements will be joined
+ *     together as the className of the new element.
+ * @param {...(Object|string|Array|NodeList)} var_args Further DOM nodes or
+ *     strings for text nodes. If one of the var_args is an array or NodeList,
+ *     its elements will be added as childNodes instead.
+ * @return {!Element} Reference to a DOM node.
+ */
+goog.dom.DomHelper.prototype.createUntypedDom = function(
+    tagName, opt_attributes, var_args) {
+  return goog.dom.createDom_(this.document_, arguments);
+};
+
+
+/**
  * Alias for {@code createDom}.
  * @param {string} tagName Tag to create.
  * @param {(Object|string)=} opt_attributes If object, then a map of name-value
@@ -2450,7 +2563,7 @@ goog.dom.DomHelper.prototype.$dom = goog.dom.DomHelper.prototype.createDom;
  * @return {!Element} The new element.
  */
 goog.dom.DomHelper.prototype.createElement = function(name) {
-  return this.document_.createElement(name);
+  return this.document_.createElement(String(name));
 };
 
 

@@ -175,15 +175,7 @@ class XliffParser {
           currMsgParts.add(SoyMsgRawTextPart.of(currRawTextPart));
           currRawTextPart = null;
         }
-        String xId = atts.getValue("id");
-        if (xId == null) {
-          throw new SoyMsgException(
-              String.format("Expected id attr for placeholder in trans-unit %s", currMsgId));
-        } else if (!xId.matches("[A-Z_0-9]+")) {
-          throw new SoyMsgException(
-              String.format("Unexpected attr value [%s] for id of placeholder in trans-unit [%s]", atts.getValue("id"), currMsgId));
-        }
-        currMsgParts.add(new SoyMsgPlaceholderPart(xId));
+        currMsgParts.add(new SoyMsgPlaceholderPart(atts.getValue("id")));
       }
     }
 

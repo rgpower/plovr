@@ -32,7 +32,6 @@ import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.JSDocInfo.Visibility;
 import com.google.javascript.rhino.JSTypeExpression;
 import com.google.javascript.rhino.Node;
-import com.google.javascript.rhino.Token;
 
 import java.util.List;
 import java.util.Set;
@@ -127,19 +126,19 @@ public final class CheckJSDocStyle extends AbstractPostOrderCallback implements 
   @Override
   public void visit(NodeTraversal t, Node n, Node parent) {
     switch (n.getType()) {
-      case Token.FUNCTION:
+      case FUNCTION:
         visitFunction(t, n, parent);
         break;
-      case Token.ASSIGN:
+      case ASSIGN:
         // If the right side is a function it will be handled when the function is visited.
         if (!n.getLastChild().isFunction()) {
           visitNonFunction(t, n);
         }
         checkStyleForPrivateProperties(t, n);
         break;
-      case Token.VAR:
-      case Token.LET:
-      case Token.CONST:
+      case VAR:
+      case LET:
+      case CONST:
         for (Node decl : n.children()) {
           // If the right side is a function it will be handled when the function is visited.
           if (decl.getFirstChild() == null || !decl.getFirstChild().isFunction()) {
@@ -147,15 +146,15 @@ public final class CheckJSDocStyle extends AbstractPostOrderCallback implements 
           }
         }
         break;
-      case Token.STRING_KEY:
+      case STRING_KEY:
         // If the value is a function it will be handled when the function is visited.
         if (n.getFirstChild() == null || !n.getFirstChild().isFunction()) {
           visitNonFunction(t, n);
         }
         break;
-      case Token.MEMBER_FUNCTION_DEF:
-      case Token.GETTER_DEF:
-      case Token.SETTER_DEF:
+      case MEMBER_FUNCTION_DEF:
+      case GETTER_DEF:
+      case SETTER_DEF:
         // Don't need to call visitFunction because this JSDoc will be visited when the function is
         // visited.
         if (NodeUtil.getEnclosingClass(n) != null) {
@@ -265,13 +264,23 @@ public final class CheckJSDocStyle extends AbstractPostOrderCallback implements 
       return true;
     }
 
-    if (function.getParent().isMemberFunctionDef()
-        && function.getGrandparent().isClassMembers()) {
-      return !(function.getParent().matchesQualifiedName("constructor")
-          && !NodeUtil.getFunctionParameters(function).hasChildren());
+    if (function.getGrandparent().isClassMembers()) {
+      Node memberNode = function.getParent();
+      if (memberNode.isMemberFunctionDef()) {
+        // A constructor with no parameters doesn't need JSDoc,
+        // but all other member functions do.
+        return !isConstructorWithoutParameters(function);
+      } else if (memberNode.isGetterDef() || memberNode.isSetterDef()) {
+        return true;
+      }
     }
 
     return false;
+  }
+
+  private boolean isConstructorWithoutParameters(Node function) {
+    return function.getParent().matchesQualifiedName("constructor")
+        && !NodeUtil.getFunctionParameters(function).hasChildren();
   }
 
   private void checkParams(NodeTraversal t, Node function, JSDocInfo jsDoc) {
@@ -356,7 +365,8 @@ public final class CheckJSDocStyle extends AbstractPostOrderCallback implements 
     }
 
     if (name == null || !nodeToCheck.isName()) {
-      // Skip the name check.
+      // Skip the name check, but use "<unknown name>" for other errors that might be reported.
+      name = "<unknown name>";
     } else if (!nodeToCheck.matchesQualifiedName(name)) {
       t.report(nodeToCheck, INCORRECT_PARAM_NAME);
       return true;
@@ -364,10 +374,10 @@ public final class CheckJSDocStyle extends AbstractPostOrderCallback implements 
 
     boolean jsDocOptional = paramType != null && paramType.isOptionalArg();
     if (nameOptional && !jsDocOptional) {
-      t.report(nodeToCheck, OPTIONAL_PARAM_NOT_MARKED_OPTIONAL, nodeToCheck.getString());
+      t.report(nodeToCheck, OPTIONAL_PARAM_NOT_MARKED_OPTIONAL, name);
       return true;
     } else if (!nameOptional && jsDocOptional) {
-      t.report(nodeToCheck, OPTIONAL_TYPE_NOT_USING_OPTIONAL_NAME, nodeToCheck.getString());
+      t.report(nodeToCheck, OPTIONAL_TYPE_NOT_USING_OPTIONAL_NAME, name);
       return true;
     }
     return false;
@@ -390,8 +400,7 @@ public final class CheckJSDocStyle extends AbstractPostOrderCallback implements 
     if (jsDoc != null
         && (jsDoc.hasType()
             || jsDoc.hasReturnType()
-            || jsDoc.isOverride()
-            || jsDoc.isConstructor())) {
+            || jsDoc.isOverride())) {
       return;
     }
     if (function.getFirstChild().getJSDocInfo() != null) {
