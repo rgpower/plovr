@@ -44,5 +44,34 @@ package com.google.javascript.rhino;
  * @author dimvar@google.com (Dimitris Vardoulakis)
  */
 public interface ObjectTypeI extends TypeI {
+
+  /**
+   * Gets this object's constructor, or null if it is a native
+   * object (constructed natively vs. by instantiation of a function).
+   */
   FunctionTypeI getConstructor();
+
+  FunctionTypeI getSuperClassConstructor();
+
+  /**
+   * Returns the __proto__ object of this object type, NOT the ".prototype" property.
+   */
+  ObjectTypeI getPrototypeObject();
+
+  // TODO(aravindpg): might be better to define a PropertyI interface and
+  // then have a more general-purpose getProperty method here.
+
+  JSDocInfo getOwnPropertyJSDocInfo(String propertyName);
+
+  Node getOwnPropertyDefSite(String propertyName);
+
+  Node getPropertyDefSite(String propertyName);
+
+  /** Whether this type is an instance object of some constructor. */
+  // NOTE(dimvar): for OTI, this is true only for InstanceObjectType and a single case
+  // in FunctionType.java. Why do we need the FunctionType case? Could this method be
+  // true for "classy" objects only?
+  boolean isInstanceType();
+
+  boolean hasProperty(String propertyName);
 }

@@ -20,9 +20,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.template.soy.data.SoyValueHelper.EMPTY_DICT;
 
 import com.google.common.base.Joiner;
+import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
 import com.google.common.truth.FailureStrategy;
@@ -100,14 +100,14 @@ public final class TemplateTester {
       INJECTOR.getProvider(RenderContext.Builder.class);
 
   static RenderContext getDefaultContext(CompiledTemplates templates) {
-    return getDefaultContext(templates, ImmutableSet.<String>of());
+    return getDefaultContext(templates, Predicates.<String>alwaysFalse());
   }
 
   static RenderContext getDefaultContext(
-      CompiledTemplates templates, ImmutableSet<String> activeDelPackages) {
+      CompiledTemplates templates, Predicate<String> activeDelPackages) {
     return DEFAULT_CONTEXT_BUILDER
         .get()
-        .withActiveDelPackages(activeDelPackages)
+        .withActiveDelPackageSelector(activeDelPackages)
         .withCompiledTemplates(templates)
         .build();
   }
@@ -228,6 +228,22 @@ public final class TemplateTester {
     CompiledTemplateSubject rendersAs(String expected, RenderContext context) {
       compile();
       return rendersAndLogs(expected, "", EMPTY_DICT, EMPTY_DICT, context);
+    }
+
+    CompiledTemplateSubject failsToRenderWith(
+        Class<? extends Throwable> expected, Map<String, ?> params) {
+      try {
+        factory.create(asRecord(params), EMPTY_DICT)
+            .render(new AdvisingStringBuilder(), defaultContext);
+      } catch (Throwable t) {
+        if (!expected.isInstance(t)) {
+          failWithBadResults("failsToRenderWith", expected, "failed with", t);
+        }
+        return this;
+      }
+      failureStrategy.fail(
+          String.format("Expected %s to fail to render with a %s", getDisplaySubject(), expected));
+      return this;  // technically dead
     }
 
     private SoyRecord asRecord(Map<String, ?> params) {

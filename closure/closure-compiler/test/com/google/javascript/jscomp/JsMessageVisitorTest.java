@@ -17,7 +17,6 @@
 package com.google.javascript.jscomp;
 
 import static com.google.common.truth.Truth.assertThat;
-import static com.google.javascript.jscomp.JsMessage.Style;
 import static com.google.javascript.jscomp.JsMessage.Style.CLOSURE;
 import static com.google.javascript.jscomp.JsMessage.Style.LEGACY;
 import static com.google.javascript.jscomp.JsMessage.Style.RELAX;
@@ -30,6 +29,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.debugging.sourcemap.FilePosition;
 import com.google.debugging.sourcemap.SourceMapGeneratorV3;
 import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
+import com.google.javascript.jscomp.JsMessage.Style;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.Node;
 
@@ -185,6 +185,27 @@ public final class JsMessageVisitorTest extends TestCase {
     JsMessage msg = messages.get(0);
     assertEquals("MSG_MENU_MARK_AS_UNREAD", msg.getKey());
     assertEquals("a", msg.getDesc());
+  }
+
+  public void testInvalidJsMessageOnObjLit() {
+    extractMessages(""
+        + "pint.sub = {"
+        + "  /** @desc a */ MSG_MENU_MARK_AS_UNREAD: undefined"
+        + "}");
+    assertThat(compiler.getErrors()).hasLength(1);
+    assertError(compiler.getErrors()[0]).hasType(JsMessageVisitor.MESSAGE_TREE_MALFORMED);
+  }
+
+  public void testJsMessageAliasOnObjLit() {
+    extractMessagesSafely(""
+        + "pint.sub = {"
+        + "  MSG_MENU_MARK_AS_UNREAD: another.namespace.MSG_MENU_MARK_AS_UNREAD"
+        + "}");
+  }
+
+  public void testJsMessageOnRHSOfVar() {
+    extractMessagesSafely("var MSG_MENU_MARK_AS_UNREAD = a.name.space.MSG_MENU_MARK_AS_UNREAD;");
+    assertThat(messages).isEmpty();
   }
 
   public void testOrphanedJsMessage() {
@@ -748,7 +769,7 @@ public final class JsMessageVisitorTest extends TestCase {
     }
   }
 
-  private class DummyJsVisitor extends JsMessageVisitor {
+  private static class DummyJsVisitor extends JsMessageVisitor {
 
     private DummyJsVisitor(Style style) {
       super(null, true, style, null);

@@ -311,6 +311,21 @@ function testRemoveFormattingNestedDivs() {
 }
 
 
+function testTheJavascriptReplaceMetacharacters() {
+  var div = document.getElementById('html');
+  div.innerHTML = '123 $< $> $" $& $$ $` $\' 456';
+  var expected = '123 $&lt; $&gt; $" $&amp; $$ $` $\' 456' +
+      (goog.userAgent.product.SAFARI ? '<br>' : '');
+  // No idea why these <br> appear, but they're fairly insignificant anyways.
+
+  goog.dom.Range.createFromNodeContents(div).select();
+
+  FORMATTER.removeFormatting_();
+  assertHTMLEquals(
+      'String.prototype.replace metacharacters should not trigger', expected,
+      div.innerHTML);
+}
+
 /**
  * Test that when we perform remove formatting on an entire table,
  * that the visual look is similar to as if there was a table there.
@@ -986,7 +1001,37 @@ function testKeyboardShortcut_other() {
   FIELDMOCK.$replay();
 
   var e = {};
-  var key = 'a';
+  var key = 'x';
+  var result = FORMATTER.handleKeyboardShortcut(e, key, true);
+  assertFalse(result);
+
+  FIELDMOCK.$verify();
+}
+
+function testCustomKeyboardShortcut_custom() {
+  FIELDMOCK.$reset();
+
+  FIELDMOCK.execCommand(
+      goog.editor.plugins.RemoveFormatting.REMOVE_FORMATTING_COMMAND);
+
+  FIELDMOCK.$replay();
+
+  var e = {};
+  var key = '\\';
+  FORMATTER.setKeyboardShortcutKey(key);
+  var result = FORMATTER.handleKeyboardShortcut(e, key, true);
+  assertTrue(result);
+
+  FIELDMOCK.$verify();
+}
+
+function testCustomKeyboardShortcut_default() {
+  FIELDMOCK.$reset();
+  FIELDMOCK.$replay();
+
+  var e = {};
+  var key = ' ';
+  FORMATTER.setKeyboardShortcutKey('\\');
   var result = FORMATTER.handleKeyboardShortcut(e, key, true);
   assertFalse(result);
 

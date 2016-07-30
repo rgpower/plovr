@@ -64,22 +64,21 @@ public class NoObjectType extends FunctionType {
   private static final long serialVersionUID = 1L;
 
   NoObjectType(JSTypeRegistry registry) {
-    super(registry, null, null,
-          registry.createArrowType(null, null),
-          null, null, true, true);
+    super(
+        registry, null, null, registry.createArrowType(null, null), null, null, true, true, false);
     getInternalArrowType().returnType = this;
     this.setInstanceType(this);
   }
 
   @Override
   public boolean isSubtype(JSType that) {
-    return isSubtype(that, ImplCache.create());
+    return isSubtype(that, ImplCache.create(), SubtypingMode.NORMAL);
   }
 
   @Override
   protected boolean isSubtype(JSType that,
-      ImplCache implicitImplCache) {
-    if (JSType.isSubtypeHelper(this, that, implicitImplCache)) {
+      ImplCache implicitImplCache, SubtypingMode subtypingMode) {
+    if (JSType.isSubtypeHelper(this, that, implicitImplCache, subtypingMode)) {
       return true;
     } else {
       return that.isObject() && !that.isNoType() && !that.isNoResolvedType();
@@ -94,6 +93,11 @@ public class NoObjectType extends FunctionType {
   @Override
   public boolean isNoObjectType() {
     return true;
+  }
+
+  @Override
+  public boolean isConstructor() {
+    return false;
   }
 
   @Override

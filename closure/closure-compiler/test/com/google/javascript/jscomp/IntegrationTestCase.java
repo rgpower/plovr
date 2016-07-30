@@ -22,11 +22,9 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.javascript.jscomp.testing.BlackHoleErrorManager;
 import com.google.javascript.rhino.Node;
-
-import junit.framework.TestCase;
-
 import java.util.ArrayList;
 import java.util.List;
+import junit.framework.TestCase;
 
 /**
  * Framework for end-to-end test cases.
@@ -52,8 +50,15 @@ abstract class IntegrationTestCase extends TestCase {
           "var IteratorIterable;",
           "/** @interface */",
           "function IArrayLike() {};",
+          // TODO(sdh): See if we can remove IIterableResult and Set once polyfills are split
+          "/** @interface */",
+          "var IIterableResult;",
           "/** @constructor */",
           "var Map;",
+          "/** @constructor */",
+          "var Set;",
+          "/** @constructor */",
+          "function ObjectPropertyDescriptor() {};",
           "",
           "/** @constructor */ function Window() {}",
           "/** @type {string} */ Window.prototype.name;",
@@ -148,11 +153,16 @@ abstract class IntegrationTestCase extends TestCase {
 
   protected boolean normalizeResults = false;
 
+  protected String inputFileNamePrefix;
+  protected String inputFileNameSuffix;
+
   @Override
   public void setUp() {
     externs = DEFAULT_EXTERNS;
     lastCompiler = null;
     normalizeResults = false;
+    inputFileNamePrefix = "i";
+    inputFileNameSuffix = ".js";
   }
 
   protected void testSame(CompilerOptions options, String original) {
@@ -180,7 +190,7 @@ abstract class IntegrationTestCase extends TestCase {
       String[] original, String[] compiled) {
     Compiler compiler = compile(options, original);
     assertEquals("Expected no warnings or errors\n" +
-        "Errors: \n" + Joiner.on("\n").join(compiler.getErrors()) +
+        "Errors: \n" + Joiner.on("\n").join(compiler.getErrors()) + "\n" +
         "Warnings: \n" + Joiner.on("\n").join(compiler.getWarnings()),
         0, compiler.getErrors().length + compiler.getWarnings().length);
 
@@ -316,7 +326,10 @@ abstract class IntegrationTestCase extends TestCase {
     Compiler compiler = lastCompiler = new Compiler();
     BlackHoleErrorManager.silence(compiler);
     compiler.compileModules(
-        externs, ImmutableList.copyOf(CompilerTestCase.createModuleChain(original)),
+        externs,
+        ImmutableList.copyOf(
+            CompilerTestCase.createModuleChain(
+                ImmutableList.copyOf(original), inputFileNamePrefix, inputFileNameSuffix)),
         options);
     return compiler;
   }
@@ -341,7 +354,7 @@ abstract class IntegrationTestCase extends TestCase {
     Compiler compiler = new Compiler();
     List<SourceFile> inputs = new ArrayList<>();
     for (int i = 0; i < original.length; i++) {
-      inputs.add(SourceFile.fromCode("input" + i, original[i]));
+      inputs.add(SourceFile.fromCode(inputFileNamePrefix + i + inputFileNameSuffix, original[i]));
     }
     compiler.init(externs, inputs, options);
     checkUnexpectedErrorsOrWarnings(compiler, 0);

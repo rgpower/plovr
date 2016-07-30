@@ -156,7 +156,7 @@ class ExtractPrototypeMemberDeclarations implements CompilerPass {
       Node var = NodeUtil.newVarNode(prototypeAlias, null)
           .useSourceInfoIfMissingFromForTree(injectionPoint);
 
-      injectionPoint.addChildrenToFront(var);
+      injectionPoint.addChildToFront(var);
     }
     // Go through all extraction instances and extract each of them.
     for (ExtractionInstance instance : info.instances) {
@@ -337,12 +337,40 @@ class ExtractPrototypeMemberDeclarations implements CompilerPass {
       this.lhs = lhs;
       this.memberName = NodeUtil.getPrototypePropertyName(lhs);
       this.node = node;
-      this.qualifiedClassName =
-          NodeUtil.getPrototypeClassName(lhs).getQualifiedName();
+      this.qualifiedClassName = getPrototypeClassName(lhs).getQualifiedName();
     }
 
     private boolean isSameClass(PrototypeMemberDeclaration other) {
       return qualifiedClassName.equals(other.qualifiedClassName);
+    }
+
+    private static Node getPrototypeClassName(Node qName) {
+      Node cur = qName;
+      while (cur.isGetProp()) {
+        if (cur.getLastChild().getString().equals("prototype")) {
+          return cur.getFirstChild();
+        } else {
+          cur = cur.getFirstChild();
+        }
+      }
+      return null;
+    }
+
+    private static boolean isPrototypePropertyDeclaration(Node n) {
+      if (!NodeUtil.isExprAssign(n)) {
+        return false;
+      }
+      Node lvalue = n.getFirstFirstChild();
+      if (lvalue.isGetProp()) {
+        Node cur = lvalue.getFirstChild();
+        while (cur.isGetProp()) {
+          if (cur.getLastChild().getString().equals("prototype")) {
+            return cur.isQualifiedName();
+          }
+          cur = cur.getFirstChild();
+        }
+      }
+      return false;
     }
 
     /**
@@ -350,7 +378,7 @@ class ExtractPrototypeMemberDeclarations implements CompilerPass {
      * else it returns {@code null}.
      */
     private static PrototypeMemberDeclaration extractDeclaration(Node n) {
-      if (!NodeUtil.isPrototypePropertyDeclaration(n)) {
+      if (!isPrototypePropertyDeclaration(n)) {
         return null;
       }
       Node lhs = n.getFirstFirstChild();

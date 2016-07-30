@@ -1720,6 +1720,11 @@ public final class NameAnalyzerTest extends CompilerTestCase {
         "");
   }
 
+  public void testObjectDefineSetters_global() {
+    test("function Foo() {} "
+        + "$jscomp.global.Object.defineProperties(Foo, {prop: {set: function() {}}});", "");
+  }
+
   public void testNoRemoveWindowPropertyAlias1() {
      testSame(
          "var self_ = window.gbar;\n" +
@@ -2075,8 +2080,7 @@ public final class NameAnalyzerTest extends CompilerTestCase {
     return new MarkNoSideEffectCallsAndNameAnalyzerRunner(compiler);
   }
 
-  private class MarkNoSideEffectCallsAndNameAnalyzerRunner
-      implements CompilerPass {
+  private static class MarkNoSideEffectCallsAndNameAnalyzerRunner implements CompilerPass {
     MarkNoSideEffectCalls markNoSideEffectCalls;
     NameAnalyzer analyzer;
     MarkNoSideEffectCallsAndNameAnalyzerRunner(Compiler compiler) {

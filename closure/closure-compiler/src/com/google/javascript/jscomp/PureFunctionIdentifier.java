@@ -35,7 +35,6 @@ import com.google.javascript.rhino.Token;
 import com.google.javascript.rhino.jstype.FunctionType;
 import com.google.javascript.rhino.jstype.JSType;
 import com.google.javascript.rhino.jstype.JSTypeNative;
-
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -43,7 +42,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -233,7 +231,7 @@ class PureFunctionIdentifier implements CompilerPass {
       }
     } else if (NodeUtil.isFunctionExpression(name)) {
       // The anonymous function reference is also the definition.
-      // TODO(user) Change SimpleDefinitionFinder so it is possible to query for
+      // TODO(user) Change DefinitionUseSiteFinder so it is possible to query for
       // function expressions by function node.
 
       // isExtern is false in the call to the constructor for the
@@ -461,22 +459,22 @@ class PureFunctionIdentifier implements CompilerPass {
               node, node.getFirstChild(), node.getLastChild());
         } else {
           switch(node.getType()) {
-            case Token.CALL:
-            case Token.NEW:
+            case CALL:
+            case NEW:
               visitCall(sideEffectInfo, node);
               break;
-            case Token.DELPROP:
-            case Token.DEC:
-            case Token.INC:
+            case DELPROP:
+            case DEC:
+            case INC:
               visitAssignmentOrUnaryOperator(
                   sideEffectInfo, traversal.getScope(),
                   node, node.getFirstChild(), null);
               break;
-            case Token.NAME:
+            case NAME:
               // Variable definition are not side effects.
               // Just check that the name appears in the context of a
               // variable declaration.
-              Preconditions.checkArgument(NodeUtil.isVarDeclaration(node));
+              Preconditions.checkArgument(NodeUtil.isNameDeclaration(parent));
               Node value = node.getFirstChild();
               // Assignment to local, if the value isn't a safe local value,
               // new object creation or literal or known primitive result
@@ -487,10 +485,10 @@ class PureFunctionIdentifier implements CompilerPass {
                 sideEffectInfo.blacklistLocal(var);
               }
               break;
-            case Token.THROW:
+            case THROW:
               visitThrow(sideEffectInfo);
               break;
-            case Token.RETURN:
+            case RETURN:
               if (node.hasChildren()
                   && !NodeUtil.evaluatesToLocalValue(node.getFirstChild())) {
                 sideEffectInfo.setTaintsReturn();
@@ -498,8 +496,7 @@ class PureFunctionIdentifier implements CompilerPass {
               break;
             default:
               throw new IllegalArgumentException(
-                  "Unhandled side effect node type " +
-                  Token.name(node.getType()));
+                  "Unhandled side effect node type " + node.getType());
           }
         }
       }
@@ -533,9 +530,7 @@ class PureFunctionIdentifier implements CompilerPass {
         return;
       }
 
-      for (Iterator<Var> i = t.getScope().getVars(); i.hasNext();) {
-        Var v = i.next();
-
+      for (Var v : t.getScope().getVarIterable()) {
         boolean param = v.getParentNode().isParamList();
         if (param &&
             !sideEffectInfo.blacklisted().contains(v) &&
@@ -803,7 +798,7 @@ class PureFunctionIdentifier implements CompilerPass {
   }
 
   private static boolean isIncDec(Node n) {
-    int type = n.getType();
+    Token type = n.getType();
     return (type == Token.INC || type == Token.DEC);
   }
 
@@ -813,32 +808,35 @@ class PureFunctionIdentifier implements CompilerPass {
    */
   @SuppressWarnings("unused")
   private static boolean isKnownLocalValue(final Node value) {
-    Predicate<Node> taintingPredicate = new Predicate<Node>() {
-      @Override
-      public boolean apply(Node value) {
-        switch (value.getType()) {
-          case Token.ASSIGN:
-            // The assignment might cause an alias, look at the LHS.
+    Predicate<Node> taintingPredicate =
+        new Predicate<Node>() {
+          @Override
+          public boolean apply(Node value) {
+            switch (value.getType()) {
+              case ASSIGN:
+                // The assignment might cause an alias, look at the LHS.
+                return false;
+              case THIS:
+                // TODO(johnlenz): maybe redirect this to be a tainting list for 'this'.
+                return false;
+              case NAME:
+                // TODO(johnlenz): add to local tainting list, if the NAME
+                // is known to be a local.
+                return false;
+              case GETELEM:
+              case GETPROP:
+                // There is no information about the locality of object properties.
+                return false;
+              case CALL:
+                // TODO(johnlenz): add to local tainting list, if the call result
+                // is not known to be a local result.
+                return false;
+              default:
+                break;
+            }
             return false;
-          case Token.THIS:
-            // TODO(johnlenz): maybe redirect this to be a tainting list for 'this'.
-            return false;
-          case Token.NAME:
-            // TODO(johnlenz): add to local tainting list, if the NAME
-            // is known to be a local.
-            return false;
-          case Token.GETELEM:
-          case Token.GETPROP:
-            // There is no information about the locality of object properties.
-            return false;
-          case Token.CALL:
-            // TODO(johnlenz): add to local tainting list, if the call result
-            // is not known to be a local result.
-            return false;
-        }
-        return false;
-      }
-    };
+          }
+        };
 
     return NodeUtil.evaluatesToLocalValue(value, taintingPredicate);
   }
@@ -1214,31 +1212,19 @@ class PureFunctionIdentifier implements CompilerPass {
   static class Driver implements CompilerPass {
     private final AbstractCompiler compiler;
     private final String reportPath;
-    private final boolean useNameReferenceGraph;
 
-    Driver(AbstractCompiler compiler, String reportPath,
-        boolean useNameReferenceGraph) {
+    Driver(AbstractCompiler compiler, String reportPath) {
       this.compiler = compiler;
       this.reportPath = reportPath;
-      this.useNameReferenceGraph = useNameReferenceGraph;
     }
 
     @Override
     public void process(Node externs, Node root) {
-      DefinitionProvider definitionProvider = null;
-      if (useNameReferenceGraph) {
-        NameReferenceGraphConstruction graphBuilder =
-            new NameReferenceGraphConstruction(compiler);
-        graphBuilder.process(externs, root);
-        definitionProvider = graphBuilder.getNameReferenceGraph();
-      } else {
-        SimpleDefinitionFinder defFinder = new SimpleDefinitionFinder(compiler);
-        defFinder.process(externs, root);
-        definitionProvider = defFinder;
-      }
+      NameBasedDefinitionProvider defFinder = new NameBasedDefinitionProvider(compiler);
+      defFinder.process(externs, root);
 
       PureFunctionIdentifier pureFunctionIdentifier =
-          new PureFunctionIdentifier(compiler, definitionProvider);
+          new PureFunctionIdentifier(compiler, defFinder);
       pureFunctionIdentifier.process(externs, root);
 
       if (reportPath != null) {

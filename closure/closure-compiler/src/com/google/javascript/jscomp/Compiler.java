@@ -21,6 +21,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Splitter;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -28,6 +29,7 @@ import com.google.debugging.sourcemap.proto.Mapping.OriginalMapping;
 import com.google.javascript.jscomp.CompilerOptions.DevMode;
 import com.google.javascript.jscomp.ReferenceCollectingCallback.ReferenceCollection;
 import com.google.javascript.jscomp.TypeValidator.TypeMismatch;
+import com.google.javascript.jscomp.deps.ModuleLoader;
 import com.google.javascript.jscomp.deps.SortedDependencies.MissingProvideException;
 import com.google.javascript.jscomp.parsing.Config;
 import com.google.javascript.jscomp.parsing.ParserRunner;
@@ -79,7 +81,7 @@ import java.util.regex.Matcher;
  * window, document.
  *
  */
-public class Compiler extends AbstractCompiler {
+public class Compiler extends AbstractCompiler implements ErrorHandler {
   static final String SINGLETON_MODULE_NAME = "$singleton$";
 
   static final DiagnosticType MODULE_DEPENDENCY_ERROR =
@@ -118,6 +120,9 @@ public class Compiler extends AbstractCompiler {
   // 2 modules, because we use this as a signal for which passes to run.
   private JSModuleGraph moduleGraph;
 
+  // The module loader for resolving paths into module URIs.
+  private ModuleLoader moduleLoader;
+
   // The JS source inputs
   private List<CompilerInput> inputs;
 
@@ -130,6 +135,10 @@ public class Compiler extends AbstractCompiler {
   // Compile-time injected libraries. The node points to the last node of
   // the library, so code can be inserted after.
   private final Map<String, Node> injectedLibraries = new LinkedHashMap<>();
+
+  // Node of the final injected library. Future libraries will be injected
+  // after this node.
+  private Node lastInjectedLibrary;
 
   // Parse tree root nodes
   Node externsRoot;
@@ -201,17 +210,13 @@ public class Compiler extends AbstractCompiler {
   public PerformanceTracker tracker;
 
   // Used by optimize-returns, optimize-parameters and remove-unused-variables
-  private SimpleDefinitionFinder defFinder = null;
+  private DefinitionUseSiteFinder defFinder = null;
 
   // For use by the new type inference
   private GlobalTypeInfo symbolTable;
 
-  // The oldErrorReporter exists so we can get errors from the JSTypeRegistry.
-  private final com.google.javascript.rhino.ErrorReporter oldErrorReporter =
-      RhinoErrorReporter.forOldRhino(this);
-
-  // This error reporter gets the messages from the current Rhino parser.
-  private final ErrorReporter defaultErrorReporter =
+  // This error reporter gets the messages from the current Rhino parser or TypeRegistry.
+  private final ErrorReporter oldErrorReporter =
       RhinoErrorReporter.forOldRhino(this);
 
   /** Error strings used for reporting JSErrors */
@@ -255,7 +260,7 @@ public class Compiler extends AbstractCompiler {
    */
   public Compiler(PrintStream stream) {
     addChangeHandler(recentChange);
-    outStream = stream;
+    this.outStream = stream;
   }
 
   /**
@@ -300,12 +305,12 @@ public class Compiler extends AbstractCompiler {
     this.options = options;
     this.languageMode = options.getLanguageIn();
     if (errorManager == null) {
-      if (outStream == null) {
+      if (this.outStream == null) {
         setErrorManager(
             new LoggerErrorManager(createMessageFormatter(), logger));
       } else {
         PrintStreamErrorManager printer =
-            new PrintStreamErrorManager(createMessageFormatter(), outStream);
+            new PrintStreamErrorManager(createMessageFormatter(), this.outStream);
         printer.setSummaryDetailLevel(options.summaryDetailLevel);
         setErrorManager(printer);
       }
@@ -313,13 +318,28 @@ public class Compiler extends AbstractCompiler {
 
     reconcileOptionsWithGuards();
 
+    // Turn off type-based optimizations when type checking is off
+    if (!options.checkTypes) {
+      options.setDisambiguateProperties(false);
+      options.setAmbiguateProperties(false);
+      options.setInlineProperties(false);
+      options.setUseTypesForOptimization(false);
+    }
+
     if (options.legacyCodeCompile) {
-      options.disambiguateProperties = false;
-      options.ambiguateProperties = false;
+      options.setDisambiguateProperties(false);
+      options.setAmbiguateProperties(false);
       options.useNonStrictWarningsGuard();
     }
 
     initWarningsGuard(options.getWarningsGuard());
+  }
+
+  public void printConfig(PrintStream printStream) {
+    printStream.println("==== CompilerOptions ====");
+    printStream.println(options.toString());
+    printStream.println("==== WarningsGuard ====");
+    printStream.println(warningsGuard.toString());
   }
 
   void initWarningsGuard(WarningsGuard warningsGuard) {
@@ -349,10 +369,21 @@ public class Compiler extends AbstractCompiler {
     // With NTI, we still need OTI to run because the later passes that use
     // types only understand OTI types at the moment.
     // But we do not want to see the warnings from OTI.
-    if (options.getNewTypeInference()) {
+    if (options.getNewTypeInference() && options.getRunOTIAfterNTI()) {
       options.checkTypes = true;
+      // Supress warnings from the const checks of CheckAccessControls so as to avoid
+      // duplication.
+      options.setWarningLevel(DiagnosticGroups.ACCESS_CONTROLS_CONST, CheckLevel.OFF);
       if (!options.reportOTIErrorsUnderNTI) {
-        options.setWarningLevel(DiagnosticGroups.OLD_CHECK_TYPES, CheckLevel.OFF);
+        options.setWarningLevel(
+            DiagnosticGroups.OLD_CHECK_TYPES,
+            CheckLevel.OFF);
+        options.setWarningLevel(
+            DiagnosticGroups.OLD_REPORT_UNKNOWN_TYPES,
+            CheckLevel.OFF);
+        options.setWarningLevel(
+            FunctionTypeBuilder.ALL_DIAGNOSTICS,
+            CheckLevel.OFF);
       }
       options.setWarningLevel(
           DiagnosticGroup.forType(RhinoErrorReporter.TYPE_PARSE_ERROR),
@@ -399,6 +430,11 @@ public class Compiler extends AbstractCompiler {
     List<JSModule> modules = new ArrayList<>(1);
     modules.add(module);
     initModules(externs, modules, options);
+    addFilesToSourceMap(inputs);
+
+    if (options.printConfig) {
+      printConfig(System.err);
+    }
   }
 
   /**
@@ -703,8 +739,7 @@ public class Compiler extends AbstractCompiler {
         return;
       }
 
-      // IDE-mode is defined to stop here, before the heavy rewriting begins.
-      if (!options.checksOnly && !options.ideMode) {
+      if (!options.checksOnly && !options.shouldGenerateTypedExterns()) {
         optimize();
       }
     }
@@ -719,7 +754,7 @@ public class Compiler extends AbstractCompiler {
     setProgress(1.0, "recordFunctionInformation");
 
     if (tracker != null) {
-      tracker.outputTracerReport(outStream == null ? System.out : outStream);
+      tracker.outputTracerReport();
     }
   }
 
@@ -929,7 +964,7 @@ public class Compiler extends AbstractCompiler {
   Tracer newTracer(String passName) {
     String comment = passName
         + (recentChange.hasCodeChanged() ? " on recently changed AST" : "");
-    if (options.tracer.isOn()) {
+    if (options.tracer.isOn() && tracker != null) {
       tracker.recordPassStart(passName, true);
     }
     return new Tracer("Compiler", comment);
@@ -937,7 +972,7 @@ public class Compiler extends AbstractCompiler {
 
   void stopTracer(Tracer t, String passName) {
     long result = t.stop();
-    if (options.tracer.isOn()) {
+    if (options.tracer.isOn() && tracker != null) {
       tracker.recordPassStop(passName, result);
     }
   }
@@ -1016,8 +1051,8 @@ public class Compiler extends AbstractCompiler {
 
   @Override
   boolean areNodesEqualForInlining(Node n1, Node n2) {
-    if (options.ambiguateProperties ||
-        options.disambiguateProperties) {
+    if (options.shouldAmbiguateProperties() ||
+        options.shouldDisambiguateProperties()) {
       // The type based optimizations require that type information is preserved
       // during other optimizations.
       return n1.isEquivalentToTyped(n2);
@@ -1181,7 +1216,11 @@ public class Compiler extends AbstractCompiler {
 
   @Override
   public TypeIRegistry getTypeIRegistry() {
-    return getTypeRegistry();
+    if (options.getNewTypeInference() && !options.getRunOTIAfterNTI()) {
+      return getSymbolTable();
+    } else {
+      return getTypeRegistry();
+    }
   }
 
   @Override
@@ -1303,17 +1342,19 @@ public class Compiler extends AbstractCompiler {
   }
 
   @Override
-  void setSymbolTable(GlobalTypeInfo symbolTable) {
-    this.symbolTable = symbolTable;
+  void setSymbolTable(CompilerPass symbolTable) {
+    Preconditions.checkArgument(
+        symbolTable == null || symbolTable instanceof GlobalTypeInfo);
+    this.symbolTable = (GlobalTypeInfo) symbolTable;
   }
 
   @Override
-  SimpleDefinitionFinder getSimpleDefinitionFinder() {
+  DefinitionUseSiteFinder getDefinitionFinder() {
     return this.defFinder;
   }
 
   @Override
-  void setSimpleDefinitionFinder(SimpleDefinitionFinder defFinder) {
+  void setDefinitionFinder(DefinitionUseSiteFinder defFinder) {
     this.defFinder = defFinder;
   }
 
@@ -1336,7 +1377,7 @@ public class Compiler extends AbstractCompiler {
     jsRoot.detachChildren();
 
     if (options.tracer.isOn()) {
-      tracker = new PerformanceTracker(jsRoot, options.tracer);
+      tracker = new PerformanceTracker(jsRoot, options.tracer, this.outStream);
       addChangeHandler(tracker.getCodeChangeHandler());
     }
 
@@ -1353,18 +1394,20 @@ public class Compiler extends AbstractCompiler {
         externsRoot.addChildToBack(n);
       }
 
-      if (options.lowerFromEs6()) {
-        processEs6Modules();
-      }
-
-      // Modules inferred in ProcessCommonJS pass.
-      if (options.transformAMDToCJSModules || options.processCommonJSModules) {
-        processAMDAndCommonJSModules();
-      }
-
       if (options.lowerFromEs6()
           || options.transformAMDToCJSModules
           || options.processCommonJSModules) {
+
+        this.moduleLoader = new ModuleLoader(this, options.moduleRoots, inputs);
+
+        if (options.lowerFromEs6()) {
+          processEs6Modules();
+        }
+
+        // Modules inferred in ProcessCommonJS pass.
+        if (options.transformAMDToCJSModules || options.processCommonJSModules) {
+          processAMDAndCommonJSModules();
+        }
 
         // Build a map of module identifiers for any input which provides no namespace.
         // These files could be imported modules which have no exports, but do have side effects.
@@ -1393,6 +1436,9 @@ public class Compiler extends AbstractCompiler {
         if (!inputsToRewrite.isEmpty()) {
           processEs6Modules(new ArrayList<>(inputsToRewrite.values()), true);
         }
+      } else {
+        // Use an empty module loader if we're not actually dealing with modules.
+        this.moduleLoader = ModuleLoader.EMPTY;
       }
 
       orderInputs();
@@ -1419,7 +1465,6 @@ public class Compiler extends AbstractCompiler {
         // TODO(johnlenz): we shouldn't need to check both isExternExportsEnabled and
         // externExportsPath.
         if (options.sourceMapOutputPath != null ||
-            options.nameReferenceReportPath != null ||
             options.isExternExportsEnabled() ||
             options.externExportsPath != null ||
             !options.replaceStringsFunctionDescriptions.isEmpty()) {
@@ -1429,7 +1474,7 @@ public class Compiler extends AbstractCompiler {
           SourceInformationAnnotator sia =
               new SourceInformationAnnotator(
                   input.getName(), options.devMode != DevMode.OFF);
-          NodeTraversal.traverse(this, n, sia);
+          NodeTraversal.traverseEs6(this, n, sia);
         }
 
         jsRoot.addChildToBack(n);
@@ -1571,14 +1616,13 @@ public class Compiler extends AbstractCompiler {
   }
 
   void processEs6Modules(List<CompilerInput> inputsToProcess, boolean forceRewrite) {
-    ES6ModuleLoader loader = new ES6ModuleLoader(options.moduleRoots, inputs);
     for (CompilerInput input : inputsToProcess) {
       input.setCompiler(this);
       Node root = input.getAstRoot(this);
       if (root == null) {
         continue;
       }
-      new ProcessEs6Modules(this, loader, true).processFile(root, forceRewrite);
+      new ProcessEs6Modules(this).processFile(root, forceRewrite);
     }
   }
 
@@ -1588,7 +1632,6 @@ public class Compiler extends AbstractCompiler {
    * on the way.
    */
   void processAMDAndCommonJSModules() {
-    ES6ModuleLoader loader = new ES6ModuleLoader(options.moduleRoots, inputs);
     for (CompilerInput input : inputs) {
       input.setCompiler(this);
       Node root = input.getAstRoot(this);
@@ -1599,7 +1642,7 @@ public class Compiler extends AbstractCompiler {
         new TransformAMDToCJSModule(this).process(null, root);
       }
       if (options.processCommonJSModules) {
-        ProcessCommonJSModules cjs = new ProcessCommonJSModules(this, loader, true);
+        ProcessCommonJSModules cjs = new ProcessCommonJSModules(this, true);
         cjs.process(null, root);
       }
     }
@@ -1615,8 +1658,9 @@ public class Compiler extends AbstractCompiler {
 
   @Override
   Node parseSyntheticCode(String js) {
-    CompilerInput input = new CompilerInput(
-        SourceFile.fromCode(" [synthetic:" + (++syntheticCodeId) + "] ", js));
+    SourceFile source = SourceFile.fromCode(" [synthetic:" + (++syntheticCodeId) + "] ", js);
+    addFilesToSourceMap(ImmutableList.of(source));
+    CompilerInput input = new CompilerInput(source);
     putCompilerInput(input.getInputId(), input);
     return input.getAstRoot(this);
   }
@@ -1639,7 +1683,10 @@ public class Compiler extends AbstractCompiler {
   @Override
   Node parseSyntheticCode(String fileName, String js) {
     initCompilerOptionsIfTesting();
-    return parse(SourceFile.fromCode(fileName, js));
+    addFileToSourceMap(fileName, js);
+    CompilerInput input = new CompilerInput(SourceFile.fromCode(fileName, js));
+    putCompilerInput(input.getInputId(), input);
+    return input.getAstRoot(this);
   }
 
   @Override
@@ -1656,7 +1703,7 @@ public class Compiler extends AbstractCompiler {
 
   @Override
   ErrorReporter getDefaultErrorReporter() {
-    return defaultErrorReporter;
+    return oldErrorReporter;
   }
 
   //------------------------------------------------------------------------
@@ -2102,11 +2149,6 @@ public class Compiler extends AbstractCompiler {
   }
 
   @Override
-  public boolean isIdeMode() {
-    return options.ideMode;
-  }
-
-  @Override
   Config getParserConfig(ConfigContext context) {
     if (parserConfig == null) {
       switch (options.getLanguageIn()) {
@@ -2134,6 +2176,14 @@ public class Compiler extends AbstractCompiler {
           parserConfig = createConfig(Config.LanguageMode.ECMASCRIPT6_TYPED);
           externsParserConfig = parserConfig;
           break;
+        case ECMASCRIPT7:
+          parserConfig = createConfig(Config.LanguageMode.ECMASCRIPT7);
+          externsParserConfig = parserConfig;
+          break;
+        case ECMASCRIPT8:
+          parserConfig = createConfig(Config.LanguageMode.ECMASCRIPT8);
+          externsParserConfig = parserConfig;
+          break;
         default:
           throw new IllegalStateException("unexpected language mode: "
               + options.getLanguageIn());
@@ -2148,12 +2198,18 @@ public class Compiler extends AbstractCompiler {
   }
 
   protected Config createConfig(Config.LanguageMode mode) {
-    return ParserRunner.createConfig(
-        isIdeMode(),
-        options.isParseJsDocDocumentation(),
-        options.isPreserveJsDocWhitespace(),
-        mode,
-        options.extraAnnotationNames);
+    Config config =
+        ParserRunner.createConfig(
+            mode,
+            options.isParseJsDocDocumentation(),
+            options.preservesDetailedSourceInfo()
+                ? Config.SourceLocationInformation.PRESERVE
+                : Config.SourceLocationInformation.DISCARD,
+            options.canContinueAfterErrors()
+                ? Config.RunMode.KEEP_GOING
+                : Config.RunMode.STOP_AFTER_ERROR,
+            options.extraAnnotationNames);
+    return config;
   }
 
   //------------------------------------------------------------------------
@@ -2185,6 +2241,11 @@ public class Compiler extends AbstractCompiler {
       }
       errorManager.report(level, error);
     }
+  }
+
+  @Override
+  public void report(CheckLevel ignoredLevel, JSError error) {
+    report(error);
   }
 
   @Override
@@ -2226,14 +2287,14 @@ public class Compiler extends AbstractCompiler {
 
   @Override
   boolean hasHaltingErrors() {
-    return !isIdeMode() && getErrorCount() > 0;
+    return !getOptions().canContinueAfterErrors() && getErrorCount() > 0;
   }
 
   /**
    * Consults the {@link ErrorManager} to see if we've encountered errors
    * that should halt compilation. <p>
    *
-   * If {@link CompilerOptions#ideMode} is {@code true}, this function
+   * If {@link CompilerOptions#canContinueAfterErrors} is {@code true}, this function
    * always returns {@code false} without consulting the error manager. The
    * error manager will continue to be told about new errors and warnings, but
    * the compiler will complete compilation of all inputs.<p>
@@ -2353,6 +2414,10 @@ public class Compiler extends AbstractCompiler {
 
   VariableMap getPropertyMap() {
     return getPassConfig().getIntermediateState().propertyMap;
+  }
+
+  VariableMap getStringMap() {
+    return getPassConfig().getIntermediateState().stringMap;
   }
 
   @Override
@@ -2574,46 +2639,75 @@ public class Compiler extends AbstractCompiler {
   }
 
   @Override
-  Node ensureLibraryInjected(String resourceName,
-      boolean normalizeAndUniquifyNames) {
-    if (injectedLibraries.containsKey(resourceName)
-        || options.preventLibraryInjection.contains(resourceName)) {
-      return null;
+  Node ensureLibraryInjected(String resourceName, boolean force) {
+    boolean doNotInject =
+        !force && (options.skipNonTranspilationPasses || options.preventLibraryInjection);
+    if (injectedLibraries.containsKey(resourceName) || doNotInject) {
+      return lastInjectedLibrary;
     }
 
-    // All libraries depend on js/base.js
-    boolean isBase = "base".equals(resourceName);
-    if (!isBase) {
-      ensureLibraryInjected("base", true);
-    }
-
-    Node firstChild = loadLibraryCode(resourceName, normalizeAndUniquifyNames)
-        .removeChildren();
-    Node lastChild = firstChild.getLastSibling();
-
-    Node parent = getNodeForCodeInsertion(null);
-    if (isBase || options.preventLibraryInjection.contains("base")) {
-      parent.addChildrenToFront(firstChild);
-    } else {
-      parent.addChildrenAfter(
-          firstChild, injectedLibraries.get("base"));
-    }
-    reportCodeChange();
-
-    injectedLibraries.put(resourceName, lastChild);
-    return lastChild;
-  }
-
-  /** Load a library as a resource */
-  @VisibleForTesting
-  Node loadLibraryCode(String resourceName, boolean normalizeAndUniquifyNames) {
+    // Load/parse the code.
     String originalCode = ResourceLoader.loadTextResource(
         Compiler.class, "js/" + resourceName + ".js");
-    Node ast = parseSyntheticCode(originalCode);
-    if (normalizeAndUniquifyNames) {
+    Node ast = parseSyntheticCode(" [synthetic:" + resourceName + "] ", originalCode);
+
+    // Look for string literals of the form 'require foo bar' or 'externs baz' or 'normalize'.
+    // As we process each one, remove it from its parent.
+    for (Node node = ast.getFirstChild();
+         node != null && node.isExprResult() && node.getFirstChild().isString();
+         node = ast.getFirstChild()) {
+      String directive = node.getFirstChild().getString();
+      List<String> words = Splitter.on(' ').splitToList(directive);
+      switch (words.get(0)) {
+        case "use":
+          // 'use strict' is ignored (and deleted).
+          break;
+        case "require":
+          // 'require lib1 lib2'; pulls in the named libraries before this one.
+          for (String dependency : words.subList(1, words.size())) {
+            ensureLibraryInjected(dependency, force);
+          }
+          break;
+        case "declare":
+          // 'declare name1 name2'; adds the names to the externs (with no type information).
+          // Note that we could simply add the entire externs library, but that leads to
+          // potentially-surprising behavior when the externs that are present depend on
+          // whether or not a polyfill is used.
+          for (String extern : words.subList(1, words.size())) {
+            getSynthesizedExternsInputAtEnd()
+                .getAstRoot(this)
+                .addChildToBack(IR.var(IR.name(extern)));
+          }
+          break;
+        default:
+          throw new RuntimeException("Bad directive: " + directive);
+      }
+      ast.removeChild(node);
+    }
+
+    // If we've already started optimizations, then we need to normalize this.
+    if (getLifeCycleStage().isNormalized()) {
       Normalize.normalizeSyntheticCode(this, ast, "jscomp_" + resourceName + "_");
     }
-    return ast;
+
+    // Insert the code immediately after the last-inserted runtime library.
+    Node lastChild = ast.getLastChild();
+    Node firstChild = ast.removeChildren();
+    if (firstChild == null) {
+      // Handle require-only libraries.
+      return lastInjectedLibrary;
+    }
+    Node parent = getNodeForCodeInsertion(null);
+    if (lastInjectedLibrary == null) {
+      parent.addChildrenToFront(firstChild);
+    } else {
+      parent.addChildrenAfter(firstChild, lastInjectedLibrary);
+    }
+    lastInjectedLibrary = lastChild;
+    injectedLibraries.put(resourceName, lastChild);
+
+    reportCodeChange();
+    return lastChild;
   }
 
   /** Returns the compiler version baked into the jar. */
@@ -2632,7 +2726,7 @@ public class Compiler extends AbstractCompiler {
 
   @Override
   void addComments(String filename, List<Comment> comments) {
-    if (!isIdeMode()) {
+    if (!getOptions().preservesDetailedSourceInfo()) {
       throw new UnsupportedOperationException(
           "addComments may only be called in IDE mode.");
     }
@@ -2641,7 +2735,7 @@ public class Compiler extends AbstractCompiler {
 
   @Override
   public List<Comment> getComments(String filename) {
-    if (!isIdeMode()) {
+    if (!getOptions().preservesDetailedSourceInfo()) {
       throw new UnsupportedOperationException(
           "getComments may only be called in IDE mode.");
     }
@@ -2656,5 +2750,24 @@ public class Compiler extends AbstractCompiler {
   @Override
   ImmutableMap<String, Node> getDefaultDefineValues() {
     return this.defaultDefineValues;
+  }
+
+  @Override
+  ModuleLoader getModuleLoader() {
+    return moduleLoader;
+  }
+
+  private void addFilesToSourceMap(Iterable<? extends SourceFile> files) {
+    if (getOptions().sourceMapIncludeSourcesContent && getSourceMap() != null) {
+      for (SourceFile file : files) {
+        getSourceMap().addSourceFile(file);
+      }
+    }
+  }
+
+  private void addFileToSourceMap(String filename, String contents) {
+    if (getOptions().sourceMapIncludeSourcesContent && getSourceMap() != null) {
+      getSourceMap().addSourceFile(SourceFile.fromCode(filename, contents));
+    }
   }
 }

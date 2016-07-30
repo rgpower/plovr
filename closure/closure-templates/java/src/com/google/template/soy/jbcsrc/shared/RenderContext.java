@@ -19,8 +19,11 @@ package com.google.template.soy.jbcsrc.shared;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Predicate;
+import com.google.common.base.Predicates;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
+import com.google.protobuf.Message;
+import com.google.template.soy.data.SanitizedContent.ContentKind;
 import com.google.template.soy.data.SoyRecord;
 import com.google.template.soy.data.SoyValueConverter;
 import com.google.template.soy.data.SoyValueHelper;
@@ -32,10 +35,13 @@ import com.google.template.soy.shared.SoyCssRenamingMap;
 import com.google.template.soy.shared.SoyIdRenamingMap;
 import com.google.template.soy.shared.restricted.SoyJavaFunction;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
+import com.google.template.soy.types.proto.SoyProtoTypeImpl;
 
 import java.util.Map;
 
-/**
+import javax.annotation.Nullable;
+
+/** 
  * A collection of contextual rendering data.  Each top level rendering operation will obtain a
  * single instance of this object and it will be propagated throughout the render tree.
  */
@@ -46,6 +52,13 @@ public final class RenderContext {
         public RenderResult render(AdvisingAppendable appendable, RenderContext context) {
           return RenderResult.done();
         }
+
+        @Override
+        @Nullable
+        public ContentKind kind() {
+          // The kind doesn't really matter, since the empty string can always be safely escaped
+          return null;
+        }
       };
 
   // TODO(lukes):  within this object most of these fields are constant across all renders while
@@ -54,7 +67,7 @@ public final class RenderContext {
   // doing this now by having SoySauceImpl reuse the Builder, but this is a little strange and could
   // be theoretically made more efficient to construct.
 
-  private final ImmutableSet<String> activeDelPackages;
+  private final Predicate<String> activeDelPackageSelector;
   private final CompiledTemplates templates;
   private final SoyCssRenamingMap cssRenamingMap;
   private final SoyIdRenamingMap xidRenamingMap;
@@ -65,7 +78,7 @@ public final class RenderContext {
   private final SoyMsgBundle msgBundle;
 
   private RenderContext(Builder builder) {
-    this.activeDelPackages = checkNotNull(builder.activeDelPackages);
+    this.activeDelPackageSelector = checkNotNull(builder.activeDelPackageSelector);
     this.templates = checkNotNull(builder.templates);
     this.cssRenamingMap = builder.cssRenamingMap;
     this.xidRenamingMap = builder.xidRenamingMap;
@@ -102,10 +115,28 @@ public final class RenderContext {
     return printDirective;
   }
 
+  /**
+   * Helper for boxing protos.  We cannot currently box protos without calling out to the value
+   * converter because the SoyProtoValue has a package private constructor and even if it was
+   * public it would be hard/impossible to call it.
+   *
+   * <p>The difficulty is because SoyProtoTypeImpl.Value currently depends on its SoyType for
+   * field interpretation.  In theory we could drop this and have it just use the descriptor
+   * directly (since it has a Message instance it could just call message.getDescriptor()), but
+   * this may add some overhead.  This could all be made much easier if we had perfect type
+   * information (then we would ~never need to box or rely on the SoyValue implementation).
+   */
+  public SoyProtoTypeImpl.Value box(Message proto) {
+    if (proto == null) {
+      return null;
+    }
+    return (SoyProtoTypeImpl.Value) converter.convert(proto);
+  }
+
   public CompiledTemplate getDelTemplate(
       String calleeName, String variant, boolean allowEmpty, SoyRecord params, SoyRecord ij) {
     CompiledTemplate.Factory callee =
-        templates.selectDelTemplate(calleeName, variant, activeDelPackages);
+        templates.selectDelTemplate(calleeName, variant, activeDelPackageSelector);
     if (callee == null) {
       if (allowEmpty) {
         return EMPTY_TEMPLATE;
@@ -115,7 +146,6 @@ public final class RenderContext {
               + calleeName
               + "' (and no attribute allowemptydefault=\"true\").");
     }
-    // TODO(lukes): change this method to have the caller call create?  this seems a little weird
     return callee.create(params, ij);
   }
 
@@ -142,7 +172,7 @@ public final class RenderContext {
   @VisibleForTesting
   public Builder toBuilder() {
     return new Builder()
-        .withActiveDelPackages(this.activeDelPackages)
+        .withActiveDelPackageSelector(this.activeDelPackageSelector)
         .withSoyFunctions(soyJavaFunctionsMap)
         .withSoyPrintDirectives(soyJavaDirectivesMap)
         .withCssRenamingMap(cssRenamingMap)
@@ -154,7 +184,7 @@ public final class RenderContext {
   /** A builder for configuring the context. */
   public static final class Builder {
     private CompiledTemplates templates;
-    private ImmutableSet<String> activeDelPackages = ImmutableSet.of();
+    private Predicate<String> activeDelPackageSelector = Predicates.alwaysFalse();
     private SoyCssRenamingMap cssRenamingMap = SoyCssRenamingMap.EMPTY;
     private SoyIdRenamingMap xidRenamingMap = SoyCssRenamingMap.EMPTY;
     private ImmutableMap<String, SoyJavaFunction> soyJavaFunctionsMap = ImmutableMap.of();
@@ -167,8 +197,8 @@ public final class RenderContext {
       return this;
     }
 
-    public Builder withActiveDelPackages(ImmutableSet<String> activeDelPackages) {
-      this.activeDelPackages = checkNotNull(activeDelPackages);
+    public Builder withActiveDelPackageSelector(Predicate<String> activeDelPackageSelector) {
+      this.activeDelPackageSelector = checkNotNull(activeDelPackageSelector);
       return this;
     }
 

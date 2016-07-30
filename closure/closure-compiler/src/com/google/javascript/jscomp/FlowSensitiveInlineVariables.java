@@ -28,7 +28,6 @@ import com.google.javascript.jscomp.NodeTraversal.ScopedCallback;
 import com.google.javascript.jscomp.graph.DiGraph.DiGraphEdge;
 import com.google.javascript.jscomp.graph.DiGraph.DiGraphNode;
 import com.google.javascript.rhino.Node;
-import com.google.javascript.rhino.Token;
 
 import java.util.Collection;
 import java.util.Iterator;
@@ -351,34 +350,36 @@ class FlowSensitiveInlineVariables extends AbstractPostOrderCallback
       // TODO(johnlenz): rework catch expression handling when we
       // have lexical scope support so catch expressions don't
       // need to be special cased.
-      if (NodeUtil.has(def.getLastChild(),
+      if (NodeUtil.has(
+          def.getLastChild(),
           new Predicate<Node>() {
-              @Override
-              public boolean apply(Node input) {
-                switch (input.getType()) {
-                  case Token.GETELEM:
-                  case Token.GETPROP:
-                  case Token.ARRAYLIT:
-                  case Token.OBJECTLIT:
-                  case Token.REGEXP:
-                  case Token.NEW:
+            @Override
+            public boolean apply(Node input) {
+              switch (input.getType()) {
+                case GETELEM:
+                case GETPROP:
+                case ARRAYLIT:
+                case OBJECTLIT:
+                case REGEXP:
+                case NEW:
+                  return true;
+                case NAME:
+                  Var var = scope.getOwnSlot(input.getString());
+                  if (var != null && var.getParentNode().isCatch()) {
                     return true;
-                  case Token.NAME:
-                    Var var = scope.getOwnSlot(input.getString());
-                    if (var != null
-                        && var.getParentNode().isCatch()) {
-                      return true;
-                    }
-                }
-                return false;
+                  }
+                default:
+                  break;
               }
+              return false;
+            }
           },
           new Predicate<Node>() {
-              @Override
-              public boolean apply(Node input) {
-                // Recurse if the node is not a function.
-                return !input.isFunction();
-              }
+            @Override
+            public boolean apply(Node input) {
+              // Recurse if the node is not a function.
+              return !input.isFunction();
+            }
           })) {
         return false;
       }
@@ -440,26 +441,28 @@ class FlowSensitiveInlineVariables extends AbstractPostOrderCallback
      */
     private void getDefinition(Node n) {
       AbstractCfgNodeTraversalCallback gatherCb =
-        new AbstractCfgNodeTraversalCallback() {
+          new AbstractCfgNodeTraversalCallback() {
 
-        @Override
-        public void visit(NodeTraversal t, Node n, Node parent) {
-          switch (n.getType()) {
-            case Token.NAME:
-              if (n.getString().equals(varName) && n.hasChildren()) {
-                def = n;
-              }
-              return;
+            @Override
+            public void visit(NodeTraversal t, Node n, Node parent) {
+              switch (n.getType()) {
+                case NAME:
+                  if (n.getString().equals(varName) && n.hasChildren()) {
+                    def = n;
+                  }
+                  return;
 
-            case Token.ASSIGN:
-              Node lhs = n.getFirstChild();
-              if (lhs.isName() && lhs.getString().equals(varName)) {
-                def = n;
+                case ASSIGN:
+                  Node lhs = n.getFirstChild();
+                  if (lhs.isName() && lhs.getString().equals(varName)) {
+                    def = n;
+                  }
+                  return;
+                default:
+                  break;
               }
-              return;
-          }
-        }
-      };
+            }
+          };
       NodeTraversal.traverseEs6(compiler, n, gatherCb);
     }
 

@@ -346,6 +346,7 @@ goog.net.BrowserTestChannel.prototype.checkBlockedCallback_ = function(
  * sending the second chunk containing the content '2'. Depending on how we
  * receive the content, we can tell if we're behind a buffering proxy.
  * @private
+ * @suppress {missingRequire} goog.net.BrowserChannel
  */
 goog.net.BrowserTestChannel.prototype.connectStage2_ = function() {
   this.channelDebug_.debug('TestConnection: starting stage 2');
@@ -371,6 +372,7 @@ goog.net.BrowserTestChannel.prototype.connectStage2_ = function() {
     }
     return;  // Skip the test
   }
+  /** @private @suppress {missingRequire} Circular dep. */
   this.request_ =
       goog.net.BrowserChannel.createChannelRequest(this, this.channelDebug_);
   this.request_.setExtraHeaders(this.extraHeaders_);

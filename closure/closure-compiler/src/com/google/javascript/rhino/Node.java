@@ -53,6 +53,8 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
+import javax.annotation.Nullable;
+
 /**
  * This class implements the root of the intermediate representation.
  *
@@ -102,12 +104,13 @@ public class Node implements Serializable {
       GENERATOR_FN       = 59,    // Set if the node is a Generator function or
                                   // member method.
       ARROW_FN           = 60,
-      YIELD_FOR          = 61,    // Set if a yield is a "yield all"
-      EXPORT_DEFAULT     = 62,    // Set if a export is a "default" export
-      EXPORT_ALL_FROM    = 63,    // Set if an export is a "*"
-      IS_CONSTANT_VAR    = 64,    // A lexical variable is inferred const
-      GENERATOR_MARKER   = 65,    // Used by the ES6-to-ES3 translator.
-      GENERATOR_SAFE     = 66,    // Used by the ES6-to-ES3 translator.
+      ASYNC_FN           = 61, // http://tc39.github.io/ecmascript-asyncawait/
+      YIELD_FOR          = 62, // Set if a yield is a "yield all"
+      EXPORT_DEFAULT     = 63, // Set if a export is a "default" export
+      EXPORT_ALL_FROM    = 64, // Set if an export is a "*"
+      IS_CONSTANT_VAR    = 65, // A lexical variable is inferred const
+      GENERATOR_MARKER   = 66, // Used by the ES6-to-ES3 translator.
+      GENERATOR_SAFE     = 67, // Used by the ES6-to-ES3 translator.
 
       RAW_STRING_VALUE   = 71,    // Used to support ES6 tagged template literal.
       COMPUTED_PROP_METHOD = 72,  // A computed property that has the method
@@ -145,8 +148,10 @@ public class Node implements Serializable {
                                   // after the goog.module is desugared.
       GOOG_MODULE_REQUIRE = 88,   // Node is a goog.require() as desugared by goog.module()
       FEATURE_SET = 89,           // Attaches a FeatureSet to SCRIPT nodes.
-      IS_MODULE_NAME = 90;        // Indicates that a STRING node represents a namespace from
+      IS_MODULE_NAME = 90,        // Indicates that a STRING node represents a namespace from
                                   // goog.module() or goog.require() call.
+      WAS_PREVIOUSLY_PROVIDED = 91; // Indicates a namespace that was provided at some point in the
+                                  // past.
 
   private static final String propToString(int propType) {
       switch (propType) {
@@ -177,6 +182,7 @@ public class Node implements Serializable {
         case STATIC_MEMBER:      return "static_member";
         case GENERATOR_FN:       return "generator_fn";
         case ARROW_FN:           return "arrow_fn";
+        case ASYNC_FN:           return "async_fn";
         case YIELD_FOR:          return "yield_for";
         case EXPORT_DEFAULT:     return "export_default";
         case EXPORT_ALL_FROM:    return "export_all_from";
@@ -203,6 +209,7 @@ public class Node implements Serializable {
         case GOOG_MODULE_REQUIRE: return "goog_module_require";
         case FEATURE_SET:        return "feature_set";
         case IS_MODULE_NAME:     return "is_module_name";
+        case WAS_PREVIOUSLY_PROVIDED: return "was_previously_provided";
         default:
           throw new IllegalStateException("unexpected prop id " + propType);
       }
@@ -216,24 +223,24 @@ public class Node implements Serializable {
     private static final long serialVersionUID = 1L;
     private String str; // This is used for specialized signatures.
 
-    public TypeDeclarationNode(int nodeType, String str) {
+    public TypeDeclarationNode(Token nodeType, String str) {
       super(nodeType);
       this.str = str;
     }
 
-    public TypeDeclarationNode(int nodeType) {
+    public TypeDeclarationNode(Token nodeType) {
       super(nodeType);
     }
 
-    public TypeDeclarationNode(int nodeType, Node child) {
+    public TypeDeclarationNode(Token nodeType, Node child) {
       super(nodeType, child);
     }
 
-    public TypeDeclarationNode(int nodeType, Node left, Node right) {
+    public TypeDeclarationNode(Token nodeType, Node left, Node right) {
       super(nodeType, left, right);
     }
 
-    public TypeDeclarationNode(int nodeType, Node left, Node mid, Node right) {
+    public TypeDeclarationNode(Token nodeType, Node left, Node mid, Node right) {
       super(nodeType, left, mid, right);
     }
 
@@ -248,7 +255,7 @@ public class Node implements Serializable {
 
     @Override
     public TypeDeclarationNode cloneNode(boolean cloneTypeExprs) {
-      return copyNodeFields(new TypeDeclarationNode(type, str), cloneTypeExprs);
+      return copyNodeFields(new TypeDeclarationNode(token, str), cloneTypeExprs);
     }
   }
 
@@ -303,16 +310,16 @@ public class Node implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    StringNode(int type, String str) {
-      super(type);
+    StringNode(Token token, String str) {
+      super(token);
       if (null == str) {
         throw new IllegalArgumentException("StringNode: str is null");
       }
       this.str = str;
     }
 
-    StringNode(int type, String str, int lineno, int charno) {
-      super(type, lineno, charno);
+    StringNode(Token token, String str, int lineno, int charno) {
+      super(token, lineno, charno);
       if (null == str) {
         throw new IllegalArgumentException("StringNode: str is null");
       }
@@ -370,7 +377,7 @@ public class Node implements Serializable {
 
     @Override
     public StringNode cloneNode(boolean cloneTypeExprs) {
-      return copyNodeFields(new StringNode(type, str), cloneTypeExprs);
+      return copyNodeFields(new StringNode(token, str), cloneTypeExprs);
     }
   }
 
@@ -474,97 +481,120 @@ public class Node implements Serializable {
     }
   }
 
-  public Node(int nodeType) {
-    type = nodeType;
+  public Node(Token nodeType) {
+    token = nodeType;
     parent = null;
     sourcePosition = -1;
   }
 
-  public Node(int nodeType, Node child) {
+  public Node(Token nodeType, Node child) {
     Preconditions.checkArgument(child.parent == null,
         "new child has existing parent");
     Preconditions.checkArgument(child.next == null,
-        "new child has existing sibling");
+        "new child has existing next sibling");
+    Preconditions.checkArgument(child.previous == null,
+        "new child has existing previous sibling");
 
-    type = nodeType;
+    token = nodeType;
     parent = null;
     first = last = child;
     child.next = null;
+    child.previous = null;
     child.parent = this;
     sourcePosition = -1;
   }
 
-  public Node(int nodeType, Node left, Node right) {
+  public Node(Token nodeType, Node left, Node right) {
     Preconditions.checkArgument(left.parent == null,
         "first new child has existing parent");
     Preconditions.checkArgument(left.next == null,
-        "first new child has existing sibling");
+        "first new child has existing next sibling");
+    Preconditions.checkArgument(left.previous == null,
+        "first new child has existing previous sibling");
     Preconditions.checkArgument(right.parent == null,
         "second new child has existing parent");
     Preconditions.checkArgument(right.next == null,
-        "second new child has existing sibling");
-    type = nodeType;
+        "second new child has existing next sibling");
+    Preconditions.checkArgument(right.previous == null,
+        "second new child has existing previous sibling");
+    token = nodeType;
     parent = null;
     first = left;
     last = right;
     left.next = right;
+    left.previous = null;
     left.parent = this;
     right.next = null;
+    right.previous = left;
     right.parent = this;
     sourcePosition = -1;
   }
 
-  public Node(int nodeType, Node left, Node mid, Node right) {
+  public Node(Token nodeType, Node left, Node mid, Node right) {
     Preconditions.checkArgument(left.parent == null);
     Preconditions.checkArgument(left.next == null);
+    Preconditions.checkArgument(left.previous == null);
     Preconditions.checkArgument(mid.parent == null);
     Preconditions.checkArgument(mid.next == null);
+    Preconditions.checkArgument(mid.previous == null);
     Preconditions.checkArgument(right.parent == null);
     Preconditions.checkArgument(right.next == null);
-    type = nodeType;
+    Preconditions.checkArgument(right.previous == null);
+    token = nodeType;
     parent = null;
     first = left;
     last = right;
     left.next = mid;
+    left.previous = null;
     left.parent = this;
     mid.next = right;
+    mid.previous = left;
     mid.parent = this;
     right.next = null;
+    right.previous = mid;
     right.parent = this;
     sourcePosition = -1;
   }
 
-  Node(int nodeType, Node left, Node mid, Node mid2, Node right) {
+  Node(Token nodeType, Node left, Node mid, Node mid2, Node right) {
     Preconditions.checkArgument(left.parent == null);
     Preconditions.checkArgument(left.next == null);
+    Preconditions.checkArgument(left.previous == null);
     Preconditions.checkArgument(mid.parent == null);
     Preconditions.checkArgument(mid.next == null);
+    Preconditions.checkArgument(mid.previous == null);
     Preconditions.checkArgument(mid2.parent == null);
     Preconditions.checkArgument(mid2.next == null);
+    Preconditions.checkArgument(mid2.previous == null);
     Preconditions.checkArgument(right.parent == null);
     Preconditions.checkArgument(right.next == null);
-    type = nodeType;
+    Preconditions.checkArgument(right.previous == null);
+    token = nodeType;
     parent = null;
     first = left;
     last = right;
     left.next = mid;
+    left.previous = null;
     left.parent = this;
     mid.next = mid2;
+    mid.previous = left;
     mid.parent = this;
     mid2.next = right;
+    mid2.previous = mid;
     mid2.parent = this;
     right.next = null;
+    right.previous = mid2;
     right.parent = this;
     sourcePosition = -1;
   }
 
-  public Node(int nodeType, int lineno, int charno) {
-    type = nodeType;
+  public Node(Token nodeType, int lineno, int charno) {
+    token = nodeType;
     parent = null;
     sourcePosition = mergeLineCharNo(lineno, charno);
   }
 
-  public Node(int nodeType, Node child, int lineno, int charno) {
+  public Node(Token nodeType, Node child, int lineno, int charno) {
     this(nodeType, child);
     sourcePosition = mergeLineCharNo(lineno, charno);
   }
@@ -581,24 +611,32 @@ public class Node implements Serializable {
     return new StringNode(Token.STRING, str);
   }
 
-  public static Node newString(int type, String str) {
-    return new StringNode(type, str);
+  public static Node newString(Token token, String str) {
+    return new StringNode(token, str);
   }
 
   public static Node newString(String str, int lineno, int charno) {
     return new StringNode(Token.STRING, str, lineno, charno);
   }
 
-  public static Node newString(int type, String str, int lineno, int charno) {
-    return new StringNode(type, str, lineno, charno);
+  public static Node newString(Token token, String str, int lineno, int charno) {
+    return new StringNode(token, str, lineno, charno);
   }
 
-  public int getType() {
-    return type;
+  public Token getToken() {
+    return token;
   }
 
-  public void setType(int type) {
-    this.type = type;
+  public Token getType() {
+    return getToken();
+  }
+
+  public void setToken(Token token) {
+    this.token = token;
+  }
+
+  public void setType(Token token) {
+    setToken(token);
   }
 
   public boolean hasChildren() {
@@ -625,22 +663,12 @@ public class Node implements Serializable {
     return next;
   }
 
-  public Node getChildBefore(Node child) {
-    if (child == first) {
-      return null;
-    }
-    Node n = first;
-    if (n == null) {
-      throw new RuntimeException("node is not a child");
-    }
+  public Node getPrevious() {
+    return previous;
+  }
 
-    while (n.next != child) {
-      n = n.next;
-      if (n == null) {
-        throw new RuntimeException("node is not a child");
-      }
-    }
-    return n;
+  public Node getChildBefore(Node child) {
+    return child.previous;
   }
 
   public Node getChildAtIndex(int i) {
@@ -677,8 +705,12 @@ public class Node implements Serializable {
   public void addChildToFront(Node child) {
     Preconditions.checkArgument(child.parent == null);
     Preconditions.checkArgument(child.next == null);
+    Preconditions.checkArgument(child.previous == null);
     child.parent = this;
     child.next = first;
+    if (first != null) {
+      first.previous = child;
+    }
     first = child;
     if (last == null) {
       last = child;
@@ -688,8 +720,10 @@ public class Node implements Serializable {
   public void addChildToBack(Node child) {
     Preconditions.checkArgument(child.parent == null);
     Preconditions.checkArgument(child.next == null);
+    Preconditions.checkArgument(child.previous == null);
     child.parent = this;
     child.next = null;
+    child.previous = last;
     if (last == null) {
       first = last = child;
       return;
@@ -704,7 +738,11 @@ public class Node implements Serializable {
       child.parent = this;
     }
     Node lastSib = children.getLastSibling();
+    Preconditions.checkState(lastSib.next == null);
     lastSib.next = first;
+    if (first != null) {
+      first.previous = lastSib;
+    }
     first = children;
     if (last == null) {
       last = lastSib;
@@ -722,17 +760,19 @@ public class Node implements Serializable {
     Preconditions.checkArgument(node != null && node.parent == this,
         "The existing child node of the parent should not be null.");
     Preconditions.checkArgument(newChild.next == null,
-        "The new child node has siblings.");
+        "The new child node has next siblings.");
+    Preconditions.checkArgument(newChild.previous == null,
+        "The new child node has previous siblings.");
     Preconditions.checkArgument(newChild.parent == null,
         "The new child node already has a parent.");
     if (first == node) {
       newChild.parent = this;
       newChild.next = first;
+      first.previous = newChild;
       first = newChild;
       return;
     }
-    Node prev = getChildBefore(node);
-    addChildAfter(newChild, prev);
+    addChildAfter(newChild, node.previous);
   }
 
   /**
@@ -740,7 +780,9 @@ public class Node implements Serializable {
    */
   public void addChildAfter(Node newChild, Node node) {
     Preconditions.checkArgument(newChild.next == null,
-        "The new child node has siblings.");
+        "The new child node has next siblings.");
+    Preconditions.checkArgument(newChild.previous == null,
+        "The new child node has previous siblings.");
     addChildrenAfter(newChild, node);
   }
 
@@ -758,7 +800,11 @@ public class Node implements Serializable {
     if (node != null) {
       Node oldNext = node.next;
       node.next = children;
+      children.previous = node;
       lastSibling.next = oldNext;
+      if (oldNext != null) {
+        oldNext.previous = lastSibling;
+      }
       if (node == last) {
         last = lastSibling;
       }
@@ -766,6 +812,7 @@ public class Node implements Serializable {
       // Append to the beginning.
       if (first != null) {
         lastSibling.next = first;
+        first.previous = lastSibling;
       } else {
         last = lastSibling;
       }
@@ -777,16 +824,21 @@ public class Node implements Serializable {
    * Detach a child from its parent and siblings.
    */
   public void removeChild(Node child) {
-    Node prev = getChildBefore(child);
-    if (prev == null) {
-      first = first.next;
-    } else {
+    Node prev = child.previous;
+    if (first == child) {
+      first = child.next;
+    }
+    if (prev != null) {
       prev.next = child.next;
     }
-    if (child == last) {
+    if (last == child) {
       last = prev;
     }
+    if (child.next != null) {
+      child.next.previous = prev;
+    }
     child.next = null;
+    child.previous = null;
     child.parent = null;
   }
 
@@ -795,7 +847,9 @@ public class Node implements Serializable {
    */
   public void replaceChild(Node child, Node newChild) {
     Preconditions.checkArgument(newChild.next == null,
-        "The new child node has siblings.");
+        "The new child node has next siblings.");
+    Preconditions.checkArgument(newChild.previous == null,
+        "The new child node has previous siblings.");
     Preconditions.checkArgument(newChild.parent == null,
         "The new child node already has a parent.");
 
@@ -803,41 +857,32 @@ public class Node implements Serializable {
     newChild.copyInformationFrom(child);
 
     newChild.next = child.next;
+    newChild.previous = child.previous;
     newChild.parent = this;
     if (child == first) {
       first = newChild;
     } else {
-      Node prev = getChildBefore(child);
-      prev.next = newChild;
+      child.previous.next = newChild;
     }
     if (child == last) {
       last = newChild;
+    } else {
+      child.next.previous = newChild;
     }
     child.next = null;
+    child.previous = null;
     child.parent = null;
   }
 
   public void replaceChildAfter(Node prevChild, Node newChild) {
-    Preconditions.checkArgument(prevChild.parent == this,
-        "prev is not a child of this node.");
+    Preconditions.checkArgument(prevChild.next != null,
+        "prev is doesn't have a sibling to replace.");
+    replaceChild(prevChild.next, newChild);
+  }
 
-    Preconditions.checkArgument(newChild.next == null,
-        "The new child node has siblings.");
-    Preconditions.checkArgument(newChild.parent == null,
-        "The new child node already has a parent.");
-
-    // Copy over important information.
-    newChild.copyInformationFrom(prevChild);
-
-    Node child = prevChild.next;
-    newChild.next = child.next;
-    newChild.parent = this;
-    prevChild.next = newChild;
-    if (child == last) {
-      last = newChild;
-    }
-    child.next = null;
-    child.parent = null;
+  /** Detaches the child after the given child, or the first child if prev is null. */
+  public void replaceFirstOrChildAfter(@Nullable Node prev, Node newChild) {
+    replaceChild(prev == null ? first : prev.next, newChild);
   }
 
   @VisibleForTesting
@@ -996,7 +1041,7 @@ public class Node implements Serializable {
 
   /** Can only be called when <tt>getType() == TokenStream.NUMBER</tt> */
   public double getDouble() throws UnsupportedOperationException {
-    if (this.type == Token.NUMBER) {
+    if (this.token == Token.NUMBER) {
       throw new IllegalStateException(
           "Number node not created with Node.newNumber");
     } else {
@@ -1009,7 +1054,7 @@ public class Node implements Serializable {
    * @param value value to set.
    */
   public void setDouble(double value) throws UnsupportedOperationException {
-    if (this.type == Token.NUMBER) {
+    if (this.token == Token.NUMBER) {
       throw new IllegalStateException(
           "Number node not created with Node.newNumber");
     } else {
@@ -1019,7 +1064,7 @@ public class Node implements Serializable {
 
   /** Can only be called when node has String context. */
   public String getString() throws UnsupportedOperationException {
-    if (this.type == Token.STRING) {
+    if (this.token == Token.STRING) {
       throw new IllegalStateException(
           "String node not created with Node.newString");
     } else {
@@ -1032,7 +1077,7 @@ public class Node implements Serializable {
    * @param value the value to set.
    */
   public void setString(String value) throws UnsupportedOperationException {
-    if (this.type == Token.STRING || this.type == Token.NAME) {
+    if (this.token == Token.STRING || this.token == Token.NAME) {
       throw new IllegalStateException(
           "String node not created with Node.newString");
     } else {
@@ -1059,21 +1104,21 @@ public class Node implements Serializable {
       boolean printSource,
       boolean printAnnotations,
       boolean printType) {
-    sb.append(Token.name(type));
+    sb.append(token);
     if (this instanceof StringNode) {
       sb.append(' ');
       sb.append(getString());
-    } else if (type == Token.FUNCTION) {
+    } else if (token == Token.FUNCTION) {
       sb.append(' ');
       // In the case of JsDoc trees, the first child is often not a string
       // which causes exceptions to be thrown when calling toString or
       // toStringTree.
-      if (first == null || first.type != Token.NAME) {
+      if (first == null || first.token != Token.NAME) {
         sb.append("<invalid>");
       } else {
         sb.append(first.getString());
       }
-    } else if (type == Token.NUMBER) {
+    } else if (token == Token.NUMBER) {
       sb.append(' ');
       sb.append(getDouble());
     }
@@ -1140,8 +1185,9 @@ public class Node implements Serializable {
     }
   }
 
-  int type;              // type of the node; Token.NAME for example
+  Token token;           // Type of the token of the node; NAME for example
   Node next;             // next sibling
+  Node previous;         // previous sibling
   private Node first;    // first element of a linked list of children
   private Node last;     // last element of a linked list of children
 
@@ -1669,7 +1715,7 @@ public class Node implements Serializable {
    */
   boolean isEquivalentTo(
       Node node, boolean compareType, boolean recurse, boolean jsDoc) {
-    if (type != node.type
+    if (token != node.token
         || getChildCount() != node.getChildCount()
         || this.getClass() != node.getClass()) {
       return false;
@@ -1691,14 +1737,14 @@ public class Node implements Serializable {
       return false;
     }
 
-    if (type == Token.INC || type == Token.DEC) {
+    if (token == Token.INC || token == Token.DEC) {
       int post1 = this.getIntProp(INCRDECR_PROP);
       int post2 = node.getIntProp(INCRDECR_PROP);
       if (post1 != post2) {
         return false;
       }
-    } else if (type == Token.STRING || type == Token.STRING_KEY) {
-      if (type == Token.STRING_KEY) {
+    } else if (token == Token.STRING || token == Token.STRING_KEY) {
+      if (token == Token.STRING_KEY) {
         int quoted1 = this.getIntProp(QUOTED_PROP);
         int quoted2 = node.getIntProp(QUOTED_PROP);
         if (quoted1 != quoted2) {
@@ -1711,11 +1757,11 @@ public class Node implements Serializable {
       if (slashV1 != slashV2) {
         return false;
       }
-    } else if (type == Token.CALL) {
+    } else if (token == Token.CALL) {
       if (this.getBooleanProp(FREE_CALL) != node.getBooleanProp(FREE_CALL)) {
         return false;
       }
-    } else if (type == Token.FUNCTION) {
+    } else if (token == Token.FUNCTION) {
       if (this.isArrowFunction() != node.isArrowFunction()) {
         return false;
       }
@@ -1743,18 +1789,18 @@ public class Node implements Serializable {
    *         of the name and properties.
    */
   public String getQualifiedName() {
-    if (type == Token.NAME || getBooleanProp(IS_MODULE_NAME)) {
+    if (token == Token.NAME || getBooleanProp(IS_MODULE_NAME)) {
       String name = getString();
       return name.isEmpty() ? null : name;
-    } else if (type == Token.GETPROP) {
+    } else if (token == Token.GETPROP) {
       String left = getFirstChild().getQualifiedName();
       if (left == null) {
         return null;
       }
       return left + "." + getLastChild().getString();
-    } else if (type == Token.THIS) {
+    } else if (token == Token.THIS) {
       return "this";
-    } else if (type == Token.SUPER) {
+    } else if (token == Token.SUPER) {
       return "super";
     } else {
       return null;
@@ -1762,16 +1808,54 @@ public class Node implements Serializable {
   }
 
   /**
+   * This function takes a set of GETPROP nodes and produces a string that is
+   * each property separated by dots. If the node ultimately under the left
+   * sub-tree is not a simple name, this is not a valid qualified name. This
+   * method returns the original name of each segment rather than the renamed
+   * version.
+   *
+   * @return a null if this is not a qualified name, or a dot-separated string
+   *         of the name and properties.
+   */
+  public String getOriginalQualifiedName() {
+    if (token == Token.NAME || getBooleanProp(IS_MODULE_NAME)) {
+      String name = getOriginalName();
+      if (name == null) {
+        name = getString();
+      }
+      return name.isEmpty() ? null : name;
+    } else if (token == Token.GETPROP) {
+      String left = getFirstChild().getOriginalQualifiedName();
+      if (left == null) {
+        return null;
+      }
+      String right = getLastChild().getOriginalName();
+      if (right == null) {
+        right = getLastChild().getString();
+      }
+
+      return left + "." + right;
+    } else if (token == Token.THIS) {
+      return "this";
+    } else if (token == Token.SUPER) {
+      return "super";
+    } else {
+      return null;
+    }
+  }
+
+
+  /**
    * Returns whether a node corresponds to a simple or a qualified name, such as
    * <code>x</code> or <code>a.b.c</code> or <code>this.a</code>.
    */
   public boolean isQualifiedName() {
     switch (getType()) {
-      case Token.NAME:
+      case NAME:
         return !getString().isEmpty();
-      case Token.THIS:
+      case THIS:
         return true;
-      case Token.GETPROP:
+      case GETPROP:
         return getFirstChild().isQualifiedName();
       default:
         return false;
@@ -1794,16 +1878,16 @@ public class Node implements Serializable {
     int start = qname.lastIndexOf('.', endIndex - 1) + 1;
 
     switch (getType()) {
-      case Token.NAME:
-      case Token.MEMBER_FUNCTION_DEF:
+      case NAME:
+      case MEMBER_FUNCTION_DEF:
         String name = getString();
         return start == 0 && !name.isEmpty() &&
            name.length() == endIndex && qname.startsWith(name);
-      case Token.THIS:
+      case THIS:
         return start == 0 && 4 == endIndex && qname.startsWith("this");
-      case Token.SUPER:
+      case SUPER:
         return start == 0 && 5 == endIndex && qname.startsWith("super");
-      case Token.GETPROP:
+      case GETPROP:
         String prop = getLastChild().getString();
         return start > 1
             && prop.length() == endIndex - start
@@ -1819,16 +1903,16 @@ public class Node implements Serializable {
    * <code>x</code> or <code>a.b.c</code> or <code>this.a</code>.
    */
   public boolean matchesQualifiedName(Node n) {
-    if (n == null || n.type != type) {
+    if (n == null || n.token != token) {
       return false;
     }
-    switch (type) {
-      case Token.NAME:
+    switch (token) {
+      case NAME:
         return !getString().isEmpty() && getString().equals(n.getString());
-      case Token.THIS:
-      case Token.SUPER:
+      case THIS:
+      case SUPER:
         return true;
-      case Token.GETPROP:
+      case GETPROP:
         return getLastChild().getString().equals(n.getLastChild().getString())
             && getFirstChild().matchesQualifiedName(n.getFirstChild());
       default:
@@ -1843,9 +1927,9 @@ public class Node implements Serializable {
    */
   public boolean isUnscopedQualifiedName() {
     switch (getType()) {
-      case Token.NAME:
+      case NAME:
         return !getString().isEmpty();
-      case Token.GETPROP:
+      case GETPROP:
         return getFirstChild().isUnscopedQualifiedName();
       default:
         return false;
@@ -1856,13 +1940,13 @@ public class Node implements Serializable {
     switch (getType()) {
       // TODO(tbreisacher): Remove CAST from this list, and disallow
       // the cryptic case from cl/41958159.
-      case Token.CAST:
-      case Token.DEFAULT_VALUE:
-      case Token.NAME:
-      case Token.GETPROP:
-      case Token.GETELEM:
-      case Token.ARRAY_PATTERN:
-      case Token.OBJECT_PATTERN:
+      case CAST:
+      case DEFAULT_VALUE:
+      case NAME:
+      case GETPROP:
+      case GETELEM:
+      case ARRAY_PATTERN:
+      case OBJECT_PATTERN:
         return true;
       default:
         return false;
@@ -1918,6 +2002,7 @@ public class Node implements Serializable {
       Node nextChild = child.getNext();
       child.parent = null;
       child.next = null;
+      child.previous = null;
       child = nextChild;
     }
     first = null;
@@ -1925,19 +2010,19 @@ public class Node implements Serializable {
   }
 
   public Node removeChildAfter(Node prev) {
-    Preconditions.checkArgument(prev.parent == this,
-        "prev is not a child of this node.");
-    Preconditions.checkArgument(prev.next != null,
-        "no next sibling.");
+    Node next = prev.next;
+    Preconditions.checkArgument(next != null, "no next sibling.");
+    removeChild(next);
+    return next;
+  }
 
-    Node child = prev.next;
-    prev.next = child.next;
-    if (child == last) {
-      last = prev;
+  /** Remove the child after the given child, or the first child if given null. */
+  public Node removeFirstOrChildAfter(@Nullable Node prev) {
+    if (prev == null) {
+      return removeFirstChild();
+    } else {
+      return removeChildAfter(prev);
     }
-    child.next = null;
-    child.parent = null;
-    return child;
   }
 
   /**
@@ -1951,7 +2036,7 @@ public class Node implements Serializable {
    * @return A detached clone of the Node, specifically excluding its children.
    */
   protected Node cloneNode(boolean cloneTypeExprs) {
-    return copyNodeFields(new Node(type), cloneTypeExprs);
+    return copyNodeFields(new Node(token), cloneTypeExprs);
   }
 
   <T extends Node> T copyNodeFields(T dst, boolean cloneTypeExprs) {
@@ -1983,6 +2068,7 @@ public class Node implements Serializable {
       n2clone.parent = result;
       if (result.last != null) {
         result.last.next = n2clone;
+        n2clone.previous = result.last;
       }
       if (result.first == null) {
         result.first = n2clone;
@@ -2111,12 +2197,25 @@ public class Node implements Serializable {
   }
 
   public TypeI getTypeI() {
-    // For the time being, we only want to return the type iff it's an old type.
-    return getJSType();
+    return typei;
   }
 
   public void setTypeI(TypeI type) {
     this.typei = type;
+  }
+
+  /**
+   * Gets the OTI {@link JSType} associated with this node if any, and null otherwise.<p>
+   *
+   * NTI and OTI don't annotate the exact same AST nodes with types. (For example, OTI
+   * doesn't annotate dead code.) When OTI runs after NTI, the checks that use type
+   * information must only see the old types. They can call this method to avoid getting
+   * a new type for an AST node where OTI did not add a type.
+   * Calls to this method are intended to be temporary. As we migrate passes to support
+   * NTI natively, we will be replacing calls to this method with calls to getTypeI.
+   */
+  public TypeI getTypeIIfOld() {
+    return typei instanceof JSType ? typei : null;
   }
 
   /**
@@ -2319,6 +2418,21 @@ public class Node implements Serializable {
   }
 
   /**
+   * Sets whether this node is an async function node. This
+   * method is meaningful only on {@link Token#FUNCTION}
+   */
+  public void setIsAsyncFunction(boolean isAsync) {
+    putBooleanProp(ASYNC_FN, isAsync);
+  }
+
+  /**
+   * Returns whether this is an async function node.
+   */
+  public boolean isAsyncFunction() {
+    return getBooleanProp(ASYNC_FN);
+  }
+
+  /**
    * Sets whether this node is a generator node. This
    * method is meaningful only on {@link Token#FUNCTION} or
    * {@link Token#MEMBER_FUNCTION_DEF} nodes.
@@ -2369,7 +2483,7 @@ public class Node implements Serializable {
     Preconditions.checkArgument(
         getType() == Token.CALL || getType() == Token.NEW,
         "setIsNoSideEffectsCall only supports CALL and NEW nodes, got %s",
-        Token.name(getType()));
+        getType());
 
     putIntProp(SIDE_EFFECT_FLAGS, flags);
   }
@@ -2528,7 +2642,7 @@ public class Node implements Serializable {
    * This should only be called for STRING nodes children of OBJECTLIT.
    */
   public void setQuotedString() {
-    throw new IllegalStateException("not a StringNode");
+    throw new IllegalStateException(this + " is not a StringNode");
   }
 
   static class NodeMismatch {
@@ -2560,99 +2674,99 @@ public class Node implements Serializable {
   /*** AST type check methods ***/
 
   public boolean isAdd() {
-    return this.type == Token.ADD;
+    return this.token == Token.ADD;
   }
 
   public boolean isAnd() {
-    return this.type == Token.AND;
+    return this.token == Token.AND;
   }
 
   public boolean isArrayLit() {
-    return this.type == Token.ARRAYLIT;
+    return this.token == Token.ARRAYLIT;
   }
 
   public boolean isArrayPattern() {
-    return this.type == Token.ARRAY_PATTERN;
+    return this.token == Token.ARRAY_PATTERN;
   }
 
   public boolean isAssign() {
-    return this.type == Token.ASSIGN;
+    return this.token == Token.ASSIGN;
   }
 
   public boolean isAssignAdd() {
-    return this.type == Token.ASSIGN_ADD;
+    return this.token == Token.ASSIGN_ADD;
   }
 
   public boolean isBlock() {
-    return this.type == Token.BLOCK;
+    return this.token == Token.BLOCK;
   }
 
   public boolean isBreak() {
-    return this.type == Token.BREAK;
+    return this.token == Token.BREAK;
   }
 
   public boolean isCall() {
-    return this.type == Token.CALL;
+    return this.token == Token.CALL;
   }
 
   public boolean isCase() {
-    return this.type == Token.CASE;
+    return this.token == Token.CASE;
   }
 
   public boolean isCast() {
-    return this.type == Token.CAST;
+    return this.token == Token.CAST;
   }
 
   public boolean isCatch() {
-    return this.type == Token.CATCH;
+    return this.token == Token.CATCH;
   }
 
   public boolean isClass() {
-    return this.type == Token.CLASS;
+    return this.token == Token.CLASS;
   }
 
   public boolean isClassMembers() {
-    return this.type == Token.CLASS_MEMBERS;
+    return this.token == Token.CLASS_MEMBERS;
   }
 
   public boolean isComma() {
-    return this.type == Token.COMMA;
+    return this.token == Token.COMMA;
   }
 
   public boolean isComputedProp() {
-    return this.type == Token.COMPUTED_PROP;
+    return this.token == Token.COMPUTED_PROP;
   }
 
   public boolean isContinue() {
-    return this.type == Token.CONTINUE;
+    return this.token == Token.CONTINUE;
   }
 
   public boolean isConst() {
-    return this.type == Token.CONST;
+    return this.token == Token.CONST;
   }
 
   public boolean isDebugger() {
-    return this.type == Token.DEBUGGER;
+    return this.token == Token.DEBUGGER;
   }
 
   public boolean isDec() {
-    return this.type == Token.DEC;
+    return this.token == Token.DEC;
   }
 
   public boolean isDefaultCase() {
-    return this.type == Token.DEFAULT_CASE;
+    return this.token == Token.DEFAULT_CASE;
   }
 
   public boolean isDefaultValue() {
-    return this.type == Token.DEFAULT_VALUE;
+    return this.token == Token.DEFAULT_VALUE;
   }
 
   public boolean isDelProp() {
-    return this.type == Token.DELPROP;
+    return this.token == Token.DELPROP;
   }
 
   public boolean isDestructuringLhs() {
-    return this.type == Token.DESTRUCTURING_LHS;
+    return this.token == Token.DESTRUCTURING_LHS;
   }
 
   public boolean isDestructuringPattern() {
@@ -2660,242 +2774,246 @@ public class Node implements Serializable {
   }
 
   public boolean isDo() {
-    return this.type == Token.DO;
+    return this.token == Token.DO;
   }
 
   public boolean isEmpty() {
-    return this.type == Token.EMPTY;
+    return this.token == Token.EMPTY;
   }
 
   public boolean isExport() {
-    return this.type == Token.EXPORT;
+    return this.token == Token.EXPORT;
   }
 
   public boolean isExprResult() {
-    return this.type == Token.EXPR_RESULT;
+    return this.token == Token.EXPR_RESULT;
   }
 
   public boolean isFalse() {
-    return this.type == Token.FALSE;
+    return this.token == Token.FALSE;
   }
 
   public boolean isFor() {
-    return this.type == Token.FOR;
+    return this.token == Token.FOR;
   }
 
   public boolean isForOf() {
-    return this.type == Token.FOR_OF;
+    return this.token == Token.FOR_OF;
   }
 
   public boolean isFunction() {
-    return this.type == Token.FUNCTION;
+    return this.token == Token.FUNCTION;
   }
 
   public boolean isGetterDef() {
-    return this.type == Token.GETTER_DEF;
+    return this.token == Token.GETTER_DEF;
   }
 
   public boolean isGetElem() {
-    return this.type == Token.GETELEM;
+    return this.token == Token.GETELEM;
   }
 
   public boolean isGetProp() {
-    return this.type == Token.GETPROP;
+    return this.token == Token.GETPROP;
   }
 
   public boolean isHook() {
-    return this.type == Token.HOOK;
+    return this.token == Token.HOOK;
   }
 
   public boolean isIf() {
-    return this.type == Token.IF;
+    return this.token == Token.IF;
   }
 
   public boolean isImport() {
-    return this.type == Token.IMPORT;
+    return this.token == Token.IMPORT;
   }
 
   public boolean isImportSpec() {
-    return this.type == Token.IMPORT_SPEC;
+    return this.token == Token.IMPORT_SPEC;
   }
 
   public boolean isIn() {
-    return this.type == Token.IN;
+    return this.token == Token.IN;
   }
 
   public boolean isInc() {
-    return this.type == Token.INC;
+    return this.token == Token.INC;
   }
 
   public boolean isInstanceOf() {
-    return this.type == Token.INSTANCEOF;
+    return this.token == Token.INSTANCEOF;
   }
 
   public boolean isInterfaceMembers() {
-    return this.type == Token.INTERFACE_MEMBERS;
+    return this.token == Token.INTERFACE_MEMBERS;
   }
 
   public boolean isRecordType() {
-    return this.type == Token.RECORD_TYPE;
+    return this.token == Token.RECORD_TYPE;
   }
 
   public boolean isCallSignature() {
-    return this.type == Token.CALL_SIGNATURE;
+    return this.token == Token.CALL_SIGNATURE;
   }
 
   public boolean isIndexSignature() {
-    return this.type == Token.INDEX_SIGNATURE;
+    return this.token == Token.INDEX_SIGNATURE;
   }
 
   public boolean isLabel() {
-    return this.type == Token.LABEL;
+    return this.token == Token.LABEL;
   }
 
   public boolean isLabelName() {
-    return this.type == Token.LABEL_NAME;
+    return this.token == Token.LABEL_NAME;
   }
 
   public boolean isLet() {
-    return this.type == Token.LET;
+    return this.token == Token.LET;
   }
 
   public boolean isMemberFunctionDef() {
-    return this.type == Token.MEMBER_FUNCTION_DEF;
+    return this.token == Token.MEMBER_FUNCTION_DEF;
   }
 
   public boolean isMemberVariableDef() {
-    return this.type == Token.MEMBER_VARIABLE_DEF;
+    return this.token == Token.MEMBER_VARIABLE_DEF;
+  }
+
+  public boolean isModuleBody() {
+    return this.token == Token.MODULE_BODY;
   }
 
   public boolean isName() {
-    return this.type == Token.NAME;
+    return this.token == Token.NAME;
   }
 
   public boolean isNE() {
-    return this.type == Token.NE;
+    return this.token == Token.NE;
   }
 
   public boolean isNew() {
-    return this.type == Token.NEW;
+    return this.token == Token.NEW;
   }
 
   public boolean isNot() {
-    return this.type == Token.NOT;
+    return this.token == Token.NOT;
   }
 
   public boolean isNull() {
-    return this.type == Token.NULL;
+    return this.token == Token.NULL;
   }
 
   public boolean isNumber() {
-    return this.type == Token.NUMBER;
+    return this.token == Token.NUMBER;
   }
 
   public boolean isObjectLit() {
-    return this.type == Token.OBJECTLIT;
+    return this.token == Token.OBJECTLIT;
   }
 
   public boolean isObjectPattern() {
-    return this.type == Token.OBJECT_PATTERN;
+    return this.token == Token.OBJECT_PATTERN;
   }
 
   public boolean isOr() {
-    return this.type == Token.OR;
+    return this.token == Token.OR;
   }
 
   public boolean isParamList() {
-    return this.type == Token.PARAM_LIST;
+    return this.token == Token.PARAM_LIST;
   }
 
   public boolean isRegExp() {
-    return this.type == Token.REGEXP;
+    return this.token == Token.REGEXP;
   }
 
   public boolean isRest() {
-    return this.type == Token.REST;
+    return this.token == Token.REST;
   }
 
   public boolean isReturn() {
-    return this.type == Token.RETURN;
+    return this.token == Token.RETURN;
   }
 
   public boolean isScript() {
-    return this.type == Token.SCRIPT;
+    return this.token == Token.SCRIPT;
   }
 
   public boolean isSetterDef() {
-    return this.type == Token.SETTER_DEF;
+    return this.token == Token.SETTER_DEF;
   }
 
   public boolean isSpread() {
-    return this.type == Token.SPREAD;
+    return this.token == Token.SPREAD;
   }
 
   public boolean isString() {
-    return this.type == Token.STRING;
+    return this.token == Token.STRING;
   }
 
   public boolean isStringKey() {
-    return this.type == Token.STRING_KEY;
+    return this.token == Token.STRING_KEY;
   }
 
   public boolean isSuper() {
-    return this.type == Token.SUPER;
+    return this.token == Token.SUPER;
   }
 
   public boolean isSwitch() {
-    return this.type == Token.SWITCH;
+    return this.token == Token.SWITCH;
   }
 
   public boolean isTaggedTemplateLit(){
-    return this.type == Token.TAGGED_TEMPLATELIT;
+    return this.token == Token.TAGGED_TEMPLATELIT;
   }
 
   public boolean isTemplateLit(){
-    return this.type == Token.TEMPLATELIT;
+    return this.token == Token.TEMPLATELIT;
   }
 
   public boolean isTemplateLitSub(){
-    return this.type == Token.TEMPLATELIT_SUB;
+    return this.token == Token.TEMPLATELIT_SUB;
   }
 
   public boolean isThis() {
-    return this.type == Token.THIS;
+    return this.token == Token.THIS;
   }
 
   public boolean isThrow() {
-    return this.type == Token.THROW;
+    return this.token == Token.THROW;
   }
 
   public boolean isTrue() {
-    return this.type == Token.TRUE;
+    return this.token == Token.TRUE;
   }
 
   public boolean isTry() {
-    return this.type == Token.TRY;
+    return this.token == Token.TRY;
   }
 
   public boolean isTypeOf() {
-    return this.type == Token.TYPEOF;
+    return this.token == Token.TYPEOF;
   }
 
   public boolean isVar() {
-    return this.type == Token.VAR;
+    return this.token == Token.VAR;
   }
 
   public boolean isVoid() {
-    return this.type == Token.VOID;
+    return this.token == Token.VOID;
   }
 
   public boolean isWhile() {
-    return this.type == Token.WHILE;
+    return this.token == Token.WHILE;
   }
 
   public boolean isWith() {
-    return this.type == Token.WITH;
+    return this.token == Token.WITH;
   }
 
   public boolean isYield() {
-    return this.type == Token.YIELD;
+    return this.token == Token.YIELD;
   }
 }

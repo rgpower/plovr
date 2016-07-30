@@ -66,21 +66,21 @@ class PeepholeSubstituteAlternateSyntax
   @SuppressWarnings("fallthrough")
   public Node optimizeSubtree(Node node) {
     switch(node.getType()) {
-      case Token.ASSIGN_SUB:
+      case ASSIGN_SUB:
         return reduceSubstractionAssignment(node);
 
-      case Token.TRUE:
-      case Token.FALSE:
+      case TRUE:
+      case FALSE:
         return reduceTrueFalse(node);
 
-      case Token.NEW:
+      case NEW:
         node = tryFoldStandardConstructors(node);
         if (!node.isCall()) {
           return node;
         }
         // Fall through on purpose because tryFoldStandardConstructors() may
         // convert a NEW node into a CALL node
-      case Token.CALL:
+      case CALL:
         Node result =  tryFoldLiteralConstructor(node);
         if (result == node) {
           result = tryFoldSimpleFunctionCall(node);
@@ -90,33 +90,40 @@ class PeepholeSubstituteAlternateSyntax
         }
         return result;
 
-      case Token.RETURN:
+      case RETURN:
         return tryReduceReturn(node);
 
-      case Token.COMMA:
+      case COMMA:
         return trySplitComma(node);
 
-      case Token.NAME:
+      case NAME:
         return tryReplaceUndefined(node);
 
-      case Token.ARRAYLIT:
+      case ARRAYLIT:
         return tryMinimizeArrayLiteral(node);
 
-      case Token.GETPROP:
+      case GETPROP:
         return tryMinimizeWindowRefs(node);
 
-      case Token.MUL:
-      case Token.AND:
-      case Token.OR:
-      case Token.BITOR:
-      case Token.BITXOR:
-      case Token.BITAND:
+      case MUL:
+      case AND:
+      case OR:
+      case BITOR:
+      case BITXOR:
+      case BITAND:
         return tryRotateAssociativeOperator(node);
 
       default:
         return node; //Nothing changed
     }
   }
+
+  private static final ImmutableSet<String> BUILTIN_EXTERNS = ImmutableSet.of(
+      "Object",
+      "Array",
+      "Error",
+      "RegExp",
+      "Math");
 
   private Node tryMinimizeWindowRefs(Node node) {
     // Normalization needs to be done to ensure there's no shadowing. The window prefix is also
@@ -132,9 +139,8 @@ class PeepholeSubstituteAlternateSyntax
       Node stringNode = node.getLastChild();
 
       // Since normalization has run we know we're referring to the global window.
-      // TODO(kevinoconnor): Improve the set of standard types that can be folded.
       if ("window".equals(nameNode.getString())
-          && STANDARD_OBJECT_CONSTRUCTORS.contains(stringNode.getString())) {
+          && BUILTIN_EXTERNS.contains(stringNode.getString())) {
         Node newNameNode = IR.name(stringNode.getString());
         Node parentNode = node.getParent();
 
@@ -344,19 +350,21 @@ class PeepholeSubstituteAlternateSyntax
 
     if (result != null) {
       switch (result.getType()) {
-        case Token.VOID:
+        case VOID:
           Node operand = result.getFirstChild();
           if (!mayHaveSideEffects(operand)) {
             n.removeFirstChild();
             reportCodeChange();
           }
           break;
-        case Token.NAME:
+        case NAME:
           String name = result.getString();
           if (name.equals("undefined")) {
             n.removeFirstChild();
             reportCodeChange();
           }
+          break;
+        default:
           break;
       }
     }
@@ -450,9 +458,10 @@ class PeepholeSubstituteAlternateSyntax
           if (action == FoldArrayAction.SAFE_TO_FOLD_WITH_ARGS ||
               action == FoldArrayAction.SAFE_TO_FOLD_WITHOUT_ARGS) {
             newLiteralNode = IR.arraylit();
-            n.removeChildren();
+            n.removeFirstChild(); // discard the function name
+            Node elements = n.removeChildren();
             if (action == FoldArrayAction.SAFE_TO_FOLD_WITH_ARGS) {
-              newLiteralNode.addChildrenToFront(arg0);
+              newLiteralNode.addChildrenToFront(elements);
             }
           }
         }
@@ -485,17 +494,17 @@ class PeepholeSubstituteAlternateSyntax
       action = FoldArrayAction.SAFE_TO_FOLD_WITH_ARGS;
     } else {
       switch (arg.getType()) {
-        case Token.STRING:
+        case STRING:
           // "Array('a')" --> "['a']"
           action = FoldArrayAction.SAFE_TO_FOLD_WITH_ARGS;
           break;
-        case Token.NUMBER:
+        case NUMBER:
           // "Array(0)" --> "[]"
           if (arg.getDouble() == 0) {
             action = FoldArrayAction.SAFE_TO_FOLD_WITHOUT_ARGS;
           }
           break;
-        case Token.ARRAYLIT:
+        case ARRAYLIT:
           // "Array([args])" --> "[[args]]"
           action = FoldArrayAction.SAFE_TO_FOLD_WITH_ARGS;
           break;
@@ -579,16 +588,18 @@ class PeepholeSubstituteAlternateSyntax
   private Node reduceTrueFalse(Node n) {
     if (late) {
       switch (n.getParent().getType()) {
-        case Token.EQ:
-        case Token.GT:
-        case Token.GE:
-        case Token.LE:
-        case Token.LT:
-        case Token.NE:
+        case EQ:
+        case GT:
+        case GE:
+        case LE:
+        case LT:
+        case NE:
           Node number = IR.number(n.isTrue() ? 1 : 0);
           n.getParent().replaceChild(n, number);
           reportCodeChange();
           return number;
+        default:
+          break;
       }
 
       Node not = IR.not(IR.number(n.isTrue() ? 0 : 1));

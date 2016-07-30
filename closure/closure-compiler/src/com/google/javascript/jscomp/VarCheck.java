@@ -23,8 +23,8 @@ import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.JSDocInfoBuilder;
 import com.google.javascript.rhino.Node;
-import com.google.javascript.rhino.Token;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -103,6 +103,8 @@ class VarCheck extends AbstractPostOrderCallback implements
   // Whether extern checks emit error.
   private final boolean strictExternCheck;
 
+  private RedeclarationCheckHandler dupHandler;
+
   VarCheck(AbstractCompiler compiler) {
     this(compiler, false);
   }
@@ -123,7 +125,8 @@ class VarCheck extends AbstractPostOrderCallback implements
     if (sanityCheck) {
       return new Es6SyntacticScopeCreator(compiler);
     } else {
-      return new Es6SyntacticScopeCreator(compiler, new RedeclarationCheckHandler());
+      dupHandler = new RedeclarationCheckHandler();
+      return new Es6SyntacticScopeCreator(compiler, dupHandler);
     }
   }
 
@@ -143,6 +146,10 @@ class VarCheck extends AbstractPostOrderCallback implements
     t.traverseRoots(externs, root);
     for (String varName : varsToDeclareInExterns) {
       createSynthesizedExternVar(varName);
+    }
+
+    if (dupHandler != null) {
+      dupHandler.removeDuplicates();
     }
   }
 
@@ -275,15 +282,15 @@ class VarCheck extends AbstractPostOrderCallback implements
     public void visit(NodeTraversal t, Node n, Node parent) {
       if (n.isName()) {
         switch (parent.getType()) {
-          case Token.VAR:
-          case Token.LET:
-          case Token.CONST:
-          case Token.FUNCTION:
-          case Token.CLASS:
-          case Token.PARAM_LIST:
+          case VAR:
+          case LET:
+          case CONST:
+          case FUNCTION:
+          case CLASS:
+          case PARAM_LIST:
             // These are okay.
             break;
-          case Token.GETPROP:
+          case GETPROP:
             if (n == parent.getFirstChild()) {
               Scope scope = t.getScope();
               Var var = scope.getVar(n.getString());
@@ -293,7 +300,7 @@ class VarCheck extends AbstractPostOrderCallback implements
               }
             }
             break;
-         case Token.ASSIGN:
+         case ASSIGN:
             // Don't warn for the "window.foo = foo;" nodes added by
             // DeclaredGlobalExternsOnWindow, nor for alias declarations
             // of the form "/** @const */ ns.Foo = Bar;"
@@ -354,6 +361,8 @@ class VarCheck extends AbstractPostOrderCallback implements
    * The handler for duplicate declarations.
    */
   private class RedeclarationCheckHandler implements RedeclarationHandler {
+    private ArrayList<Node> dupDeclNodes = new ArrayList<>();
+
     @Override
     public void onRedeclaration(
         Scope s, String name, Node n, CompilerInput input) {
@@ -379,8 +388,7 @@ class VarCheck extends AbstractPostOrderCallback implements
 
         boolean allowDupe = hasDuplicateDeclarationSuppression(n, origVar);
         if (isExternNamespace(n)) {
-          parent.getParent().removeChild(parent);
-          compiler.reportCodeChange();
+          this.dupDeclNodes.add(parent);
           return;
         }
         if (!allowDupe) {
@@ -397,6 +405,15 @@ class VarCheck extends AbstractPostOrderCallback implements
         // scope modeling.
         compiler.report(
             JSError.make(n, VAR_ARGUMENTS_SHADOWED_ERROR));
+      }
+    }
+
+    public void removeDuplicates() {
+      for (Node n : dupDeclNodes) {
+        if (n.getParent() != null) {
+          n.detachFromParent();
+          compiler.reportCodeChange();
+        }
       }
     }
   }

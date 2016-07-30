@@ -1743,7 +1743,7 @@ public final class TypedScopeCreatorTest extends CompilerTestCase {
         "var result3 = z.method1();\n");
     assertEquals("string", findNameType("result1", globalScope).toString());
     assertEquals("boolean", findNameType("result2", globalScope).toString());
-    assertEquals("T", findNameType("result3", globalScope).toString());
+    assertEquals("?", findNameType("result3", globalScope).toString());
   }
 
   public void testClosureParameterTypesWithoutJSDoc() {
@@ -1837,7 +1837,7 @@ public final class TypedScopeCreatorTest extends CompilerTestCase {
 
   public void testActiveXObject() {
     testSame(
-        CompilerTypeTestCase.ACTIVE_X_OBJECT_DEF,
+        CompilerTestCase.ACTIVE_X_OBJECT_DEF,
         "var x = new ActiveXObject();", null);
     assertEquals(
         "?",
@@ -2100,7 +2100,7 @@ public final class TypedScopeCreatorTest extends CompilerTestCase {
     return findNameType(name, scope).toString();
   }
 
-  private JSType findTokenType(final int type, TypedScope scope) {
+  private JSType findTokenType(final Token type, TypedScope scope) {
     return findTypeOnMatchedNode(new Predicate<Node>() {
       @Override public boolean apply(Node n) {
         return type == n.getType();

@@ -20,6 +20,8 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
+import com.google.common.primitives.Ints;
+import com.google.javascript.rhino.Node;
 
 import java.util.Arrays;
 import java.util.List;
@@ -338,10 +340,15 @@ final class ObjectType implements TypeWithProperties {
         if (isDeclared && declType == null) {
           declType = type;
         }
+        // If we're about to override an existing property, then preserve its defsite.
+        Node defsite = null;
+        if (hasProp(qname)) {
+          defsite = getLeftmostProp(qname).getDefSite();
+        }
         newProps = newProps.with(pname,
             isConstant ?
-            Property.makeConstant(null, type, declType) :
-            Property.make(type, isDeclared ? declType : null));
+            Property.makeConstant(defsite, type, declType) :
+            Property.makeWithDefsite(defsite, type, isDeclared ? declType : null));
       }
     } else { // This has a nested object
       String objName = qname.getLeftmostName();
@@ -417,17 +424,20 @@ final class ObjectType implements TypeWithProperties {
       boolean specializeProps1, NominalType resultNominalType,
       PersistentMap<String, Property> props1,
       PersistentMap<String, Property> props2) {
+    if (resultNominalType == null) {
+      // If props1 or props2 contains a property that also exists on Object,
+      // we must take the inherited property type into account.
+      resultNominalType = builtinObject;
+    }
     PersistentMap<String, Property> newProps = props1;
-    if (resultNominalType != null) {
-      for (Map.Entry<String, Property> propsEntry : props1.entrySet()) {
-        String pname = propsEntry.getKey();
-        Property otherProp = resultNominalType.getProp(pname);
-        if (otherProp != null) {
-          newProps = addOrRemoveProp(
-              specializeProps1, newProps, pname, otherProp, propsEntry.getValue());
-          if (newProps == BOTTOM_MAP) {
-            return BOTTOM_MAP;
-          }
+    for (Map.Entry<String, Property> propsEntry : props1.entrySet()) {
+      String pname = propsEntry.getKey();
+      Property otherProp = resultNominalType.getProp(pname);
+      if (otherProp != null) {
+        newProps = addOrRemoveProp(
+            specializeProps1, newProps, pname, otherProp, propsEntry.getValue());
+        if (newProps == BOTTOM_MAP) {
+          return BOTTOM_MAP;
         }
       }
     }
@@ -446,8 +456,7 @@ final class ObjectType implements TypeWithProperties {
             prop1.specialize(prop2) :
             Property.meet(prop1, prop2);
       }
-      Property otherProp =
-          resultNominalType == null ? null : resultNominalType.getProp(pname);
+      Property otherProp = resultNominalType.getProp(pname);
       if (otherProp != null) {
         newProps = addOrRemoveProp(specializeProps1, newProps, pname, otherProp, newProp);
         if (newProps == BOTTOM_MAP) {
@@ -545,15 +554,35 @@ final class ObjectType implements TypeWithProperties {
 
   static boolean isUnionSubtype(boolean keepLoosenessOfThis,
       Set<ObjectType> objs1, Set<ObjectType> objs2, SubtypeCache subSuperMap) {
+    return isUnionSubtypeHelper(
+        keepLoosenessOfThis, objs1, objs2, subSuperMap, null);
+  }
+
+  static void whyNotUnionSubtypes(boolean keepLoosenessOfThis,
+      Set<ObjectType> objs1, Set<ObjectType> objs2, SubtypeCache subSuperMap,
+      MismatchInfo[] boxedInfo) {
+    Preconditions.checkArgument(boxedInfo.length == 1);
+    boolean areSubtypes = isUnionSubtypeHelper(
+        keepLoosenessOfThis, objs1, objs2, subSuperMap, boxedInfo);
+    Preconditions.checkState(!areSubtypes);
+  }
+
+  private static boolean isUnionSubtypeHelper(boolean keepLoosenessOfThis,
+      Set<ObjectType> objs1, Set<ObjectType> objs2, SubtypeCache subSuperMap,
+      MismatchInfo[] boxedInfo) {
     for (ObjectType obj1 : objs1) {
       boolean foundSupertype = false;
       for (ObjectType obj2 : objs2) {
-        if (obj1.isSubtypeOfHelper(keepLoosenessOfThis, obj2, subSuperMap)) {
+        if (obj1.isSubtypeOfHelper(keepLoosenessOfThis, obj2, subSuperMap, null)) {
           foundSupertype = true;
           break;
         }
       }
       if (!foundSupertype) {
+        if (boxedInfo != null) {
+          boxedInfo[0] =
+              MismatchInfo.makeUnionTypeMismatch(JSType.fromObjectType(obj1));
+        }
         return false;
       }
     }
@@ -561,7 +590,15 @@ final class ObjectType implements TypeWithProperties {
   }
 
   boolean isSubtypeOf(ObjectType obj2, SubtypeCache subSuperMap) {
-    return isSubtypeOfHelper(true, obj2, subSuperMap);
+    return isSubtypeOfHelper(true, obj2, subSuperMap, null);
+  }
+
+  static void whyNotSubtypeOf(
+      ObjectType obj1, ObjectType obj2, MismatchInfo[] boxedInfo) {
+    Preconditions.checkArgument(boxedInfo.length == 1);
+    boolean areSubtypes =
+        obj1.isSubtypeOfHelper(true, obj2, SubtypeCache.create(), boxedInfo);
+    Preconditions.checkState(!areSubtypes);
   }
 
   /**
@@ -571,7 +608,7 @@ final class ObjectType implements TypeWithProperties {
    * { } \le { p: num= }  and also   { p: num= } \le { }.
    */
   private boolean isSubtypeOfHelper(boolean keepLoosenessOfThis,
-      ObjectType other, SubtypeCache subSuperMap) {
+      ObjectType other, SubtypeCache subSuperMap, MismatchInfo[] boxedInfo) {
     if (other == TOP_OBJECT) {
       return true;
     }
@@ -580,19 +617,29 @@ final class ObjectType implements TypeWithProperties {
       return this.isLooseSubtypeOf(other, subSuperMap);
     }
 
-    NominalType thisNt = this.nominalType;
-    NominalType otherNt = other.nominalType;
+    NominalType thisNt = getNominalType();
+    NominalType otherNt = other.getNominalType();
     boolean checkOnlyLocalProps = true;
-    if (otherNt != null && otherNt.isStructuralInterface()) {
+    if (otherNt.isStructuralInterface()) {
       if (otherNt.equals(subSuperMap.get(thisNt))) {
         return true;
       }
       subSuperMap = subSuperMap.with(thisNt, otherNt);
-      if (thisNt == null || !thisNt.isNominalSubtypeOf(otherNt)) {
+      if (!thisNt.isNominalSubtypeOf(otherNt)) {
         checkOnlyLocalProps = false;
       }
-    } else if (otherNt != null && !otherNt.isStructuralInterface()
-        && (thisNt == null || !thisNt.isNominalSubtypeOf(otherNt))) {
+      if (otherNt.isIObject()) {
+        // IObject is a weird structural type; we check that the generics
+        // match when checking two IObjects for subtyping.
+        if (thisNt.inheritsFromIObjectReflexive()
+            && !thisNt.isNominalSubtypeOf(otherNt)) {
+          return false;
+        }
+        if (thisNt.isBuiltinObject()) {
+          return compareRecordTypeToIObject(otherNt, subSuperMap);
+        }
+      }
+    } else if (!thisNt.isNominalSubtypeOf(otherNt)) {
       return false;
     }
 
@@ -608,7 +655,7 @@ final class ObjectType implements TypeWithProperties {
         return false;
       }
     }
-    if (!arePropertiesSubtypes(other, otherPropNames, subSuperMap)) {
+    if (!arePropertiesSubtypes(other, otherPropNames, subSuperMap, boxedInfo)) {
       return false;
     }
 
@@ -618,16 +665,54 @@ final class ObjectType implements TypeWithProperties {
       // Can only be executed if we have declared types for callable objects.
       return false;
     }
-    return this.fn.isSubtypeOf(other.fn, subSuperMap);
+    boolean areFunsSubtypes = this.fn.isSubtypeOf(other.fn, subSuperMap);
+    if (boxedInfo != null) {
+      FunctionType.whyNotSubtypeOf(this.fn, other.fn, subSuperMap, boxedInfo);
+    }
+    return areFunsSubtypes;
   }
 
+  // NOTE(dimvar): it's not ideal that the unquoted properties of the
+  // object literal are checked as part of the IObject type. We want
+  // a property to either always be accessed with dot or with brackets,
+  // and checking the unquoted properties against IObject gives the
+  // impression that we support both kinds of accesses for the same
+  // property. The alternatives are (none is very satisfactory):
+  // 1) Don't check any object-literal properties against IObject
+  // 2) Check all object-literal properties against IObject (what we're currently doing)
+  // 3) Check only the quoted object-literal properties against IObject.
+  //    This is not great because NTI also checks quoted properties individually
+  //    if the name is known.
+  // 4) Remember in the property map whether a property name was declared as
+  //    quoted or not. This will likely involve a lot of extra plumbing.
+  private boolean compareRecordTypeToIObject(
+      NominalType otherNt, SubtypeCache subSuperMap) {
+     JSType keyType = otherNt.getIndexType();
+     JSType valueType = otherNt.getIndexedType();
+     for (Map.Entry<String, Property> entry : this.props.entrySet()) {
+       String pname = entry.getKey();
+       JSType ptype = entry.getValue().getType();
+       if (keyType.isNumber() && Ints.tryParse(pname) == null) {
+         return false;
+       }
+       if (!keyType.isNumber() && !keyType.isString()) {
+         return false;
+       }
+       if (!ptype.isSubtypeOf(valueType, subSuperMap)) {
+         return false;
+       }
+     }
+     return true;
+   }
+
   private boolean arePropertiesSubtypes(ObjectType other,
-      Set<String> otherPropNames, SubtypeCache subSuperMap) {
+      Set<String> otherPropNames, SubtypeCache subSuperMap,
+      MismatchInfo[] boxedInfo) {
     for (String pname : otherPropNames) {
       QualifiedName qname = new QualifiedName(pname);
       if (!isPropertySubtype(
-          this.getLeftmostProp(qname), other.getLeftmostProp(qname),
-          subSuperMap)) {
+          pname, this.getLeftmostProp(qname), other.getLeftmostProp(qname),
+          subSuperMap, boxedInfo)) {
         return false;
       }
     }
@@ -636,8 +721,8 @@ final class ObjectType implements TypeWithProperties {
         if (!otherPropNames.contains(pname)) {
           QualifiedName qname = new QualifiedName(pname);
           if (!isPropertySubtype(
-              this.getLeftmostProp(qname), other.getLeftmostProp(qname),
-              subSuperMap)) {
+              pname, this.getLeftmostProp(qname), other.getLeftmostProp(qname),
+              subSuperMap, boxedInfo)) {
             return false;
           }
         }
@@ -646,7 +731,14 @@ final class ObjectType implements TypeWithProperties {
     return true;
   }
 
-  private static boolean isPropertySubtype(
+  private static boolean isPropertySubtype(String pname, Property prop1,
+      Property prop2, SubtypeCache subSuperMap, MismatchInfo[] boxedInfo) {
+    return boxedInfo != null
+        ? getPropMismatchInfo(pname, prop1, prop2, subSuperMap, boxedInfo)
+        : isPropertySubtypeHelper(prop1, prop2, subSuperMap);
+  }
+
+  private static boolean isPropertySubtypeHelper(
       Property prop1, Property prop2, SubtypeCache subSuperMap) {
     if (prop2.isOptional()) {
       if (prop1 != null
@@ -656,6 +748,33 @@ final class ObjectType implements TypeWithProperties {
     } else {
       if (prop1 == null || prop1.isOptional() ||
           !prop1.getType().isSubtypeOf(prop2.getType(), subSuperMap)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // Like isPropertySubtypeHelper, but also provides mismatch information
+  private static boolean getPropMismatchInfo(String pname, Property prop1,
+      Property prop2, SubtypeCache subSuperMap, MismatchInfo[] boxedInfo) {
+    Preconditions.checkNotNull(pname);
+    if (prop2.isOptional()) {
+      if (prop1 != null
+          && !prop1.getType().isSubtypeOf(prop2.getType(), subSuperMap)) {
+        boxedInfo[0] = MismatchInfo.makePropTypeMismatch(
+            pname, prop2.getType(), prop1.getType());
+        return false;
+      }
+    } else {
+      if (prop1 == null) {
+        boxedInfo[0] = MismatchInfo.makeMissingPropMismatch(pname);
+        return false;
+      } else if (prop1.isOptional()) {
+        boxedInfo[0] = MismatchInfo.makeMaybeMissingPropMismatch(pname);
+        return false;
+      } else if (!prop1.getType().isSubtypeOf(prop2.getType(), subSuperMap)) {
+        boxedInfo[0] = MismatchInfo.makePropTypeMismatch(
+            pname, prop2.getType(), prop1.getType());
         return false;
       }
     }
@@ -696,7 +815,8 @@ final class ObjectType implements TypeWithProperties {
     }
 
     if (other.fn == null) {
-      return this.fn == null || other.isLoose();
+      return this.fn == null
+          || other.getNominalType().isBuiltinObject() || other.isLoose();
     } else if (this.fn == null) {
       return isLoose;
     }
@@ -917,7 +1037,7 @@ final class ObjectType implements TypeWithProperties {
   // TODO(dimvar): handle greatest lower bound of interface types.
   // If we do that, we need to normalize the output, otherwise it could contain
   // two object types that are in a subtype relation, eg, see
-  // NewTypeInferenceES5OrLowerTest#testDifficultObjectSpecialization.
+  // NewTypeInferenceTest#testDifficultObjectSpecialization.
   static ImmutableSet<ObjectType> meetSetsHelper(
       boolean specializeObjs1,
       Set<ObjectType> objs1, Set<ObjectType> objs2) {
@@ -982,6 +1102,10 @@ final class ObjectType implements TypeWithProperties {
   }
 
   private Property getLeftmostProp(QualifiedName qname) {
+    return getLeftmostPropHelper(qname, false);
+  }
+
+  private Property getLeftmostPropHelper(QualifiedName qname, boolean ownProp) {
     String pname = qname.getLeftmostName();
     Property p = props.get(pname);
     if (p != null) {
@@ -994,9 +1118,34 @@ final class ObjectType implements TypeWithProperties {
       }
     }
     if (this.nominalType != null) {
-      return this.nominalType.getProp(pname);
+      return ownProp
+          ? this.nominalType.getOwnProp(pname)
+          : this.nominalType.getProp(pname);
     }
-    return builtinObject == null ? null : builtinObject.getProp(pname);
+    if (!ownProp && builtinObject != null) {
+      return builtinObject.getProp(pname);
+    }
+    return null;
+  }
+
+  Node getPropertyDefSite(String propertyName) {
+    return getPropertyDefSiteHelper(propertyName, false);
+  }
+
+  Node getOwnPropertyDefSite(String propertyName) {
+    return getPropertyDefSiteHelper(propertyName, true);
+  }
+
+  Node getPropertyDefSiteHelper(String propertyName, boolean ownProp) {
+    Property p = getLeftmostPropHelper(new QualifiedName(propertyName), ownProp);
+    // Try getters and setters specially.
+    if (p == null) {
+      p = getLeftmostProp(new QualifiedName(JSType.createGetterPropName(propertyName)));
+    }
+    if (p == null) {
+      p = getLeftmostProp(new QualifiedName(JSType.createSetterPropName(propertyName)));
+    }
+    return p == null ? null : p.getDefSite();
   }
 
   @Override
@@ -1081,7 +1230,7 @@ final class ObjectType implements TypeWithProperties {
   /**
    * Unify {@code this}, which may contain free type variables,
    * with {@code other}, a concrete type, modifying the supplied
-   * {@code typeMultimap} to add any new template varaible type bindings.
+   * {@code typeMultimap} to add any new template variable type bindings.
    * @return Whether unification succeeded
    */
   boolean unifyWithSubtype(ObjectType other, List<String> typeParameters,
@@ -1189,7 +1338,7 @@ final class ObjectType implements TypeWithProperties {
       fn.appendTo(builder);
       builder.append("|>");
     }
-    if (nominalType == null || !props.isEmpty()) {
+    if (nominalType == null && ns == null || !props.isEmpty()) {
       builder.append('{');
       boolean firstIteration = true;
       for (String pname : new TreeSet<>(props.keySet())) {

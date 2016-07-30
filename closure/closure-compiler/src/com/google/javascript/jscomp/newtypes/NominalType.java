@@ -22,6 +22,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Multimap;
+import com.google.javascript.rhino.Node;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -50,8 +51,11 @@ public final class NominalType {
     this.rawType = rawType;
   }
 
-  // This should only be called during GlobalTypeInfo.
+  // This should only be called during GlobalTypeInfo. All other calling contexts
+  // expect fully-instantiated types for properties defined on types, etc., but by accessing
+  // the raw nominal type directly they will get the uninstantiated generic types instead.
   public RawNominalType getRawNominalType() {
+    // If the raw nominal type is finalized, then we are not in GlobalTypeInfo any more.
     Preconditions.checkState(!this.rawType.isFinalized());
     return this.rawType;
   }
@@ -78,7 +82,7 @@ public final class NominalType {
     // and we use contravariance for the key of the index operation,
     // so we join here.
     JSType result = JSType.BOTTOM;
-    for (NominalType interf : getInstantiatedInterfaces()) {
+    for (NominalType interf : getInstantiatedIObjectInterfaces()) {
       JSType tmp = interf.getIndexType();
       if (tmp != null) {
         result = JSType.join(result, tmp);
@@ -97,7 +101,7 @@ public final class NominalType {
     JSType result = JSType.TOP;
     // We need this because the index type may explicitly be TOP.
     boolean foundIObject = false;
-    for (NominalType interf : getInstantiatedInterfaces()) {
+    for (NominalType interf : getInstantiatedIObjectInterfaces()) {
       JSType tmp = interf.getIndexedType();
       if (tmp != null) {
         foundIObject = true;
@@ -105,6 +109,10 @@ public final class NominalType {
       }
     }
     return foundIObject ? result : null;
+  }
+
+  boolean inheritsFromIObjectReflexive() {
+    return this.rawType.inheritsFromIObjectReflexive();
   }
 
   boolean isClassy() {
@@ -119,7 +127,7 @@ public final class NominalType {
     return this.rawType.isBuiltinWithName("Object");
   }
 
-  private boolean isIObject() {
+  boolean isIObject() {
     return this.rawType.isBuiltinWithName("IObject");
   }
 
@@ -137,6 +145,14 @@ public final class NominalType {
 
   public boolean isUninstantiatedGenericType() {
     return this.rawType.isGeneric() && typeMap.isEmpty();
+  }
+
+  public Node getDefSite() {
+    return this.rawType.getDefSite();
+  }
+
+  public FunctionType getConstructorFunction() {
+    return this.rawType.getConstructorFunction();
   }
 
   NominalType instantiateGenerics(List<JSType> types) {
@@ -234,17 +250,31 @@ public final class NominalType {
     return this.rawType.getSuperClass().instantiateGenerics(typeMap);
   }
 
-  public JSType getPrototype() {
+  public JSType getPrototypePropertyOfCtor() {
     Preconditions.checkState(this.rawType.isFinalized());
     return this.rawType.getCtorPropDeclaredType("prototype")
         .substituteGenerics(typeMap);
   }
 
+  // We require finalization for the interfaces here because the inheritance
+  // chain of each type may not be correct until after the type is finalized.
   public ImmutableSet<NominalType> getInstantiatedInterfaces() {
     Preconditions.checkState(this.rawType.isFinalized());
     ImmutableSet.Builder<NominalType> result = ImmutableSet.builder();
     for (NominalType interf : this.rawType.getInterfaces()) {
       result.add(interf.instantiateGenerics(typeMap));
+    }
+    return result.build();
+  }
+
+  // The main difference from getInstantiatedInterfaces is that this method
+  // can be used on non-finalized types.
+  private ImmutableSet<NominalType> getInstantiatedIObjectInterfaces() {
+    ImmutableSet.Builder<NominalType> result = ImmutableSet.builder();
+    for (NominalType interf : this.rawType.getInterfaces()) {
+      if (interf.inheritsFromIObjectReflexive()) {
+        result.add(interf.instantiateGenerics(typeMap));
+      }
     }
     return result.build();
   }
@@ -260,6 +290,8 @@ public final class NominalType {
       return Property.make(elmType, null);
     }
     Property p = this.rawType.getProp(pname);
+    // TODO(aravindpg): Also look for getters and setters specially (in RawNominalType::protoProps),
+    // but avoid putting them in the hot path of getProp.
     return p == null ? null : p.substituteGenerics(typeMap);
   }
 
@@ -271,9 +303,18 @@ public final class NominalType {
     return type.substituteGenerics(typeMap);
   }
 
+  Property getOwnProp(String pname) {
+    Property p = this.rawType.getOwnProp(pname);
+    return p == null ? null : p.substituteGenerics(typeMap);
+  }
+
   public boolean hasConstantProp(String pname) {
     Property p = this.rawType.getProp(pname);
     return p != null && p.isConstant();
+  }
+
+  boolean mayHaveProp(String pname) {
+    return this.rawType.mayHaveProp(pname);
   }
 
   boolean isSubtypeOf(NominalType other, SubtypeCache subSuperMap) {
@@ -303,6 +344,9 @@ public final class NominalType {
     RawNominalType thisRaw = this.rawType;
     if (thisRaw == other.rawType) {
       return areTypeMapsCompatible(other);
+    }
+    if (other.isBuiltinObject()) {
+      return true;
     }
     if (other.isInterface()) {
       // If thisRaw is not finalized, thisRaw.interfaces may be null.
@@ -510,6 +554,6 @@ public final class NominalType {
     }
     Preconditions.checkState(other instanceof NominalType);
     NominalType o = (NominalType) other;
-    return Objects.equals(typeMap, o.typeMap) && this.rawType.equals(o.rawType);
+    return this.rawType.equals(o.rawType) && Objects.equals(typeMap, o.typeMap);
   }
 }

@@ -69,10 +69,12 @@ public final class ProcessEs6ModulesTest extends CompilerTestCase {
     ImmutableList<SourceFile> inputs =
         ImmutableList.of(
             SourceFile.fromCode("other.js", "goog.provide('module$other');"),
+            SourceFile.fromCode("yet_another.js", "goog.provide('module$yet_another');"),
             SourceFile.fromCode(fileName, input));
     ImmutableList<SourceFile> expecteds =
         ImmutableList.of(
             SourceFile.fromCode("other.js", "goog.provide('module$other');"),
+            SourceFile.fromCode("yet_another.js", "goog.provide('module$yet_another');"),
             SourceFile.fromCode(fileName, expected));
     test.test(inputs, expecteds);
   }
@@ -123,11 +125,10 @@ public final class ProcessEs6ModulesTest extends CompilerTestCase {
   }
 
   public void testImport_missing() {
-    test(
-        "import name from 'module_does_not_exist'; use(name);",
-        null,
-        ES6ModuleLoader.LOAD_ERROR,
-        null);
+    setExpectParseWarningsThisTest();  // JSC_ES6_MODULE_LOAD_WARNING
+    testModules(
+        "import name from 'does_not_exist'; use(name);",
+        "goog.require('module$does_not_exist'); use(module$does_not_exist.default);");
   }
 
   public void testImportStar() {
@@ -643,6 +644,11 @@ public final class ProcessEs6ModulesTest extends CompilerTestCase {
 
   public void testImportWithoutReferences() {
     testModules("import 'other';", "goog.require('module$other');");
+    // GitHub issue #1819: https://github.com/google/closure-compiler/issues/1819
+    // Need to make sure the order of the goog.requires matches the order of the imports.
+    testModules(
+        "import 'other'; import 'yet_another';",
+        "goog.require('module$other'); goog.require('module$yet_another');");
   }
 
   public void testUselessUseStrict() {

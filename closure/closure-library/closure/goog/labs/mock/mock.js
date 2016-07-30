@@ -34,7 +34,11 @@ goog.require('goog.asserts');
 goog.require('goog.debug');
 goog.require('goog.debug.Error');
 goog.require('goog.functions');
-goog.require('goog.object');
+goog.require('goog.labs.mock.verification');
+goog.require('goog.labs.mock.verification.VerificationMode');
+goog.require('goog.testing.MockUtil');
+
+goog.setTestOnly('goog.labs.mock');
 
 
 /**
@@ -111,9 +115,14 @@ goog.labs.mock.spy = function(obj) {
  * given mock.
  *
  * @param {!Object} obj The mocked object.
+ * @param {!goog.labs.mock.verification.VerificationMode=} opt_verificationMode The mode
+ *     under which to verify invocations.
  * @return {!Object} The verifier.
  */
-goog.labs.mock.verify = function(obj) {
+goog.labs.mock.verify = function(obj, opt_verificationMode) {
+  var mode = opt_verificationMode || goog.labs.mock.verification.atLeast(1);
+  obj.$verificationModeSetter(mode);
+
   return obj.$callVerifier;
 };
 
@@ -263,14 +272,17 @@ goog.labs.mock.formatValue_ = function(obj, opt_id) {
  * @param {Array<!goog.labs.mock.MethodBinding_>} recordedCalls
  *     The recorded calls that didn't match the expectation.
  * @param {!string} methodName The expected method call.
+ * @param {!goog.labs.mock.verification.VerificationMode} verificationMode The
+ *     expected verification mode which failed verification.
  * @param {!Array<?>} args The expected arguments.
  * @constructor
  * @extends {goog.debug.Error}
  * @final
  */
-goog.labs.mock.VerificationError = function(recordedCalls, methodName, args) {
+goog.labs.mock.VerificationError = function(
+    recordedCalls, methodName, verificationMode, args) {
   var msg = goog.labs.mock.VerificationError.getVerificationErrorMsg_(
-      recordedCalls, methodName, args);
+      recordedCalls, methodName, verificationMode, args);
   goog.labs.mock.VerificationError.base(this, 'constructor', msg);
 };
 goog.inherits(goog.labs.mock.VerificationError, goog.debug.Error);
@@ -300,11 +312,13 @@ goog.labs.mock.PROTOTYPE_FIELDS_ = [
  * @param {Array<!goog.labs.mock.MethodBinding_>} recordedCalls
  *     The recorded calls that didn't match the expectation.
  * @param {!string} methodName The expected method call.
+ * @param {!goog.labs.mock.verification.VerificationMode} verificationMode The
+ *     expected verification mode that failed verification.
  * @param {!Array<?>} args The expected arguments.
  * @return {string} The error message.
  */
 goog.labs.mock.VerificationError.getVerificationErrorMsg_ = function(
-    recordedCalls, methodName, args) {
+    recordedCalls, methodName, verificationMode, args) {
 
   recordedCalls = goog.array.filter(recordedCalls, function(binding) {
     return binding.getMethodName() == methodName;
@@ -312,7 +326,8 @@ goog.labs.mock.VerificationError.getVerificationErrorMsg_ = function(
 
   var expected = goog.labs.mock.formatMethodCall_(methodName, args);
 
-  var msg = '\nExpected: ' + expected.toString();
+  var msg =
+      '\nExpected: ' + expected.toString() + ' ' + verificationMode.describe();
   msg += '\nRecorded: ';
 
   if (recordedCalls.length > 0) {
@@ -369,6 +384,25 @@ goog.labs.mock.MockManager_ = function() {
    * @private
    */
   this.callRecords_ = [];
+
+  /**
+   * Which {@code VerificationMode} to use during verification.
+   * @private
+   */
+  this.verificationMode_ = goog.labs.mock.verification.atLeast(1);
+};
+
+
+/**
+ * Allows callers of {@code #verify} to override the default verification
+ * mode of this MockManager.
+ *
+ * @param {!goog.labs.mock.verification.VerificationMode} verificationMode
+ * @private
+ */
+goog.labs.mock.MockManager_.prototype.setVerificationMode_ = function(
+    verificationMode) {
+  this.verificationMode_ = verificationMode;
 };
 
 
@@ -510,13 +544,13 @@ goog.labs.mock.MockManager_.prototype.recordCall_ = function(methodName, args) {
 goog.labs.mock.MockManager_.prototype.verifyInvocation = function(
     methodName, var_args) {
   var args = goog.array.slice(arguments, 1);
-  var binding = goog.array.find(this.callRecords_, function(binding) {
+  var count = goog.array.count(this.callRecords_, function(binding) {
     return binding.matches(methodName, args, true /* isVerification */);
   });
 
-  if (!binding) {
+  if (!this.verificationMode_.verify(count)) {
     throw new goog.labs.mock.VerificationError(
-        this.callRecords_, methodName, args);
+        this.callRecords_, methodName, this.verificationMode_, args);
   }
 };
 
@@ -580,7 +614,7 @@ goog.labs.mock.MockObjectManager_ = function(objOrClass) {
   mockedItemCtor.prototype = obj;
   this.mockedItem = new mockedItemCtor();
 
-  var enumerableProperties = goog.object.getKeys(obj);
+  var enumerableProperties = goog.testing.MockUtil.getAllProperties(obj);
   // The non enumerable properties are added due to the fact that IE8 does not
   // enumerate any of the prototype Object functions even when overriden and
   // mocking these is sometimes needed.
@@ -610,6 +644,9 @@ goog.labs.mock.MockObjectManager_ = function(objOrClass) {
 
   // The alias for verifier for the world.
   this.mockedItem.$callVerifier = this.objectCallVerifier_;
+
+  this.mockedItem.$verificationModeSetter =
+      goog.bind(this.setVerificationMode_, this);
 };
 goog.inherits(goog.labs.mock.MockObjectManager_, goog.labs.mock.MockManager_);
 
@@ -688,6 +725,11 @@ goog.labs.mock.MockFunctionManager_ = function(func) {
    */
   this.mockedItem.$callVerifier =
       this.useMockedFunctionName_(this.verifyInvocation);
+
+  // This has to be repeated because if it's set in base class it will be
+  // stubbed by MockObjectManager.
+  this.mockedItem.$verificationModeSetter =
+      goog.bind(this.setVerificationMode_, this);
 };
 goog.inherits(goog.labs.mock.MockFunctionManager_, goog.labs.mock.MockManager_);
 
@@ -930,7 +972,7 @@ goog.labs.mock.MethodBinding_.prototype.matches = function(
       goog.array.equals(calls, specs, function(arg, spec) {
         // Duck-type to see if this is an object that implements the
         // goog.labs.testing.Matcher interface.
-        if (goog.isFunction(spec.matches)) {
+        if (spec && goog.isFunction(spec.matches)) {
           return spec.matches(arg);
         } else {
           return goog.array.defaultCompareEquality(spec, arg);

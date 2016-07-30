@@ -54,6 +54,9 @@ public final class PerformanceTracker {
 
   private static final int DEFAULT_WHEN_SIZE_UNTRACKED = -1;
 
+  private final PrintStream printStream;
+  private final OutputStreamWriter output;
+
   private final Node jsRoot;
   private final boolean trackSize;
   private final boolean trackGzSize;
@@ -66,6 +69,7 @@ public final class PerformanceTracker {
   private int initGzCodeSize = DEFAULT_WHEN_SIZE_UNTRACKED;
 
   private int runtime = 0;
+  private int maxMem = 0;
   private int runs = 0;
   private int changes = 0;
   private int loopRuns = 0;
@@ -91,8 +95,10 @@ public final class PerformanceTracker {
   /** Stats for each run of a compiler pass. */
   private final List<Stats> log = new ArrayList<>();
 
-  PerformanceTracker(Node jsRoot, TracerMode mode) {
+  PerformanceTracker(Node jsRoot, TracerMode mode, PrintStream printStream) {
     this.jsRoot = jsRoot;
+    this.printStream = printStream == null ? System.out : printStream;
+    this.output = new OutputStreamWriter(this.printStream, UTF_8);
     switch (mode) {
       case TIMING_ONLY:
         this.trackSize = false;
@@ -138,6 +144,8 @@ public final class PerformanceTracker {
    * @param runtime execution time in milliseconds
    */
   void recordPassStop(String passName, long runtime) {
+    int allocMem = getAllocatedMegabytes();
+
     Stats logStats = currentPass.pop();
     Preconditions.checkState(passName.equals(logStats.pass));
 
@@ -163,8 +171,10 @@ public final class PerformanceTracker {
 
     // Update fields that aren't related to code size
     logStats.runtime = runtime;
+    logStats.allocMem = allocMem;
     logStats.runs = 1;
     summaryStats.runtime += runtime;
+    summaryStats.allocMem = Math.max(allocMem, summaryStats.allocMem);
     summaryStats.runs += 1;
     if (codeChange.hasCodeChanged()) {
       logStats.changes = 1;
@@ -189,6 +199,15 @@ public final class PerformanceTracker {
         gzCodeSize = summaryStats.gzSize = logStats.gzSize = newSize;
       }
     }
+  }
+
+  private int bytesToMB(long bytes) {
+    return (int) (bytes / (1024 * 1024));
+  }
+
+  private int getAllocatedMegabytes() {
+    Runtime javaRuntime = Runtime.getRuntime();
+    return bytesToMB(javaRuntime.totalMemory() - javaRuntime.freeMemory());
   }
 
   public boolean tracksSize() {
@@ -252,6 +271,7 @@ public final class PerformanceTracker {
     for (Entry<String, Stats> entry : summary.entrySet()) {
       Stats stats = entry.getValue();
       runtime += stats.runtime;
+      maxMem = Math.max(maxMem, stats.allocMem);
       runs += stats.runs;
       changes += stats.changes;
       if (!stats.isOneTime) {
@@ -270,9 +290,8 @@ public final class PerformanceTracker {
    * Prints a summary, which contains aggregate stats for all runs of each pass
    * and a log, which contains stats for each individual run.
    */
-  public void outputTracerReport(PrintStream pstr) {
-    JvmMetrics.maybeWriteJvmMetrics(pstr, "verbose:pretty:all");
-    OutputStreamWriter output = new OutputStreamWriter(pstr, UTF_8);
+  public void outputTracerReport() {
+    JvmMetrics.maybeWriteJvmMetrics(this.printStream, "verbose:pretty:all");
     try {
       calcTotalStats();
 
@@ -287,32 +306,34 @@ public final class PerformanceTracker {
             }
           });
 
-      output.write("Summary:\n" +
-          "pass,runtime,runs,changingRuns,reduction,gzReduction\n");
+      this.output.write("Summary:\n"
+          + "pass,runtime,allocMem,runs,changingRuns,reduction,gzReduction\n");
       for (Entry<String, Stats> entry : statEntries) {
         String key = entry.getKey();
         Stats stats = entry.getValue();
-        output.write(String.format("%s,%d,%d,%d,%d,%d\n", key, stats.runtime,
-            stats.runs, stats.changes, stats.diff, stats.gzDiff));
+        this.output.write(String.format("%s,%d,%d,%d,%d,%d,%d\n", key, stats.runtime,
+              stats.allocMem, stats.runs, stats.changes, stats.diff, stats.gzDiff));
       }
-      output.write("\nTOTAL:"
-          + "\nRuntime(ms): " + runtime + "\n#Runs: " + runs
+      this.output.write("\nTOTAL:"
+          + "\nRuntime(ms): " + runtime
+          + "\nMax mem usage (measured after each pass)(MB): " + maxMem
+          + "\n#Runs: " + runs
           + "\n#Changing runs: " + changes + "\n#Loopable runs: " + loopRuns
           + "\n#Changing loopable runs: " + loopChanges + "\nEstimated Reduction(bytes): " + diff
           + "\nEstimated GzReduction(bytes): " + gzDiff + "\nEstimated Size(bytes): " + codeSize
           + "\nEstimated GzSize(bytes): " + gzCodeSize + "\n\n");
 
-      output.write("Log:\n" +
-          "pass,runtime,runs,changingRuns,reduction,gzReduction,size,gzSize\n");
+      this.output.write("Log:\n"
+          + "pass,runtime,allocMem,codeChanged,reduction,gzReduction,size,gzSize\n");
       for (Stats stats : log) {
-        output.write(String.format("%s,%d,%d,%d,%d,%d,%d,%d\n",
-            stats.pass, stats.runtime, stats.runs, stats.changes,
+        this.output.write(String.format("%s,%d,%d,%b,%d,%d,%d,%d\n",
+            stats.pass, stats.runtime, stats.allocMem, stats.changes == 1,
             stats.diff, stats.gzDiff, stats.size, stats.gzSize));
       }
-      output.write("\n");
-      // output can be System.out, so don't close it to not lose subsequent
+      this.output.write("\n");
+      // this.output can be System.out, so don't close it to not lose subsequent
       // error messages. Flush to ensure that you will see the tracer report.
-      output.flush();
+      this.output.flush();
     } catch (IOException e) {
       throw new RuntimeException("Failed to write statistics to output.", e);
     }
@@ -330,6 +351,7 @@ public final class PerformanceTracker {
     public final String pass;
     public final boolean isOneTime;
     public long runtime = 0;
+    public int allocMem = 0;
     public int runs = 0;
     public int changes = 0;
     public int diff = 0;

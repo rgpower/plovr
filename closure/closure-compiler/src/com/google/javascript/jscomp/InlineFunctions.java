@@ -22,7 +22,6 @@ import com.google.javascript.jscomp.FunctionInjector.InliningMode;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.jscomp.NodeTraversal.Callback;
 import com.google.javascript.rhino.Node;
-import com.google.javascript.rhino.Token;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -206,7 +205,7 @@ class InlineFunctions implements CompilerPass {
       switch (n.getType()) {
           // Functions expressions in the form of:
           //   var fooFn = function(x) { return ... }
-        case Token.VAR:
+        case VAR:
           Preconditions.checkState(n.hasOneChild(), n);
           Node nameNode = n.getFirstChild();
           if (nameNode.isName()
@@ -218,13 +217,15 @@ class InlineFunctions implements CompilerPass {
 
         // Named functions
         // function Foo(x) { return ... }
-        case Token.FUNCTION:
+        case FUNCTION:
           Preconditions.checkState(NodeUtil.isStatementBlock(parent)
               || parent.isLabel());
           if (!NodeUtil.isFunctionExpression(n)) {
             Function fn = new NamedFunction(n);
             maybeAddFunction(fn, t.getModule());
           }
+          break;
+        default:
           break;
       }
     }
@@ -239,7 +240,7 @@ class InlineFunctions implements CompilerPass {
       switch (n.getType()) {
         // Functions expressions in the form of:
         //   (function(){})();
-        case Token.CALL:
+        case CALL:
           Node fnNode = null;
           if (n.getFirstChild().isFunction()) {
             fnNode = n.getFirstChild();
@@ -256,6 +257,8 @@ class InlineFunctions implements CompilerPass {
             maybeAddFunction(fn, t.getModule());
             anonFns.put(fnNode, fn.getName());
           }
+          break;
+        default:
           break;
       }
     }
@@ -325,9 +328,7 @@ class InlineFunctions implements CompilerPass {
           // TODO(johnlenz): this can be improved by looking at the possible
           // values for locals.  If there are simple values, or constants
           // we could still inline.
-          if (!assumeMinimumCapture
-              && hasLocalNames(fnNode)
-              && !NodeUtil.isIIFE(fnNode)) {
+          if (!assumeMinimumCapture && hasLocalNames(fnNode)) {
             fs.setInline(false);
           }
         }
@@ -371,7 +372,7 @@ class InlineFunctions implements CompilerPass {
     }
 
     // Don't inline this special function
-    if (RenameProperties.RENAME_PROPERTY_FUNCTION_NAME.equals(fnName)) {
+    if (compiler.getCodingConvention().isPropertyRenameFunction(fnName)) {
       return false;
     }
 
@@ -408,7 +409,7 @@ class InlineFunctions implements CompilerPass {
     public void visit(NodeTraversal t, Node n, Node parent) {
       switch (n.getType()) {
         // Function calls
-        case Token.CALL:
+        case CALL:
           Node child = n.getFirstChild();
           String name = null;
           // NOTE: The normalization pass insures that local names do not
@@ -435,6 +436,8 @@ class InlineFunctions implements CompilerPass {
               callback.visitCallSite(t, n, fs);
             }
           }
+          break;
+        default:
           break;
       }
     }
@@ -587,7 +590,7 @@ class InlineFunctions implements CompilerPass {
       if (parent.isNew()) {
         Node target = parent.getFirstChild();
         if (target.isName() && target.getString().equals(
-            SimpleDefinitionFinder.EXTERN_OBJECT_PROPERTY_STRING)) {
+            NodeUtil.EXTERN_OBJECT_PROPERTY_STRING)) {
           // This method is going to be replaced so don't inline it anywhere.
           fs.setInline(false);
         }
@@ -611,7 +614,7 @@ class InlineFunctions implements CompilerPass {
   /**
    * Inline functions at the call sites.
    */
-  private class Inline implements CallVisitorCallback {
+  private static class Inline implements CallVisitorCallback {
     private final FunctionInjector injector;
 
     Inline(FunctionInjector injector) {

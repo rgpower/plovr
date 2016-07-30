@@ -37,9 +37,6 @@ import com.google.javascript.jscomp.AbstractCommandLineRunner.JsSourceType;
 import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
 import com.google.javascript.jscomp.SourceMap.LocationMapping;
 import com.google.javascript.rhino.Node;
-
-import junit.framework.TestCase;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -54,6 +51,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import junit.framework.TestCase;
 
 /**
  * Tests for {@link CommandLineRunner}.
@@ -307,6 +305,7 @@ public final class CommandLineRunnerTest extends TestCase {
 
   public void testTypedAdvanced() {
     args.add("--compilation_level=ADVANCED_OPTIMIZATIONS");
+    args.add("--jscomp_warning=checkTypes");
     test(
         "/** @constructor */\n" +
         "function Foo() {}\n" +
@@ -505,7 +504,6 @@ public final class CommandLineRunnerTest extends TestCase {
          "    c = 'a-menu'," +
          "    d = 'css-menu';");
   }
-
 
   public void testIssue70a() {
     args.add("--language_in=ECMASCRIPT5");
@@ -1325,16 +1323,16 @@ public final class CommandLineRunnerTest extends TestCase {
     assertThat(builder.toString())
         .isEqualTo(Joiner.on('\n').join(
             "{m0}",
-            "i0",
+            "i0.js",
             "",
             "{m1:m0}",
-            "i1",
+            "i1.js",
             "",
             "{m2:m1}",
-            "i2",
+            "i2.js",
             "",
             "{m3:m2}",
-            "i3",
+            "i3.js",
             ""));
   }
 
@@ -1349,16 +1347,16 @@ public final class CommandLineRunnerTest extends TestCase {
     assertThat(builder.toString())
         .isEqualTo(Joiner.on('\n').join(
             "{m0}",
-            "i0",
+            "i0.js",
             "",
             "{m1:m0}",
-            "i1",
+            "i1.js",
             "",
             "{m2:m0}",
-            "i2",
+            "i2.js",
             "",
             "{m3:m0}",
-            "i3",
+            "i3.js",
             ""));
   }
 
@@ -1495,7 +1493,7 @@ public final class CommandLineRunnerTest extends TestCase {
   }
 
   public void testES6TranspiledByDefault() {
-    test("var x = class X {};", "var x = function() {};");
+    test("var x = class {};", "var x = function() {};");
   }
 
   public void testES5ChecksByDefault() {
@@ -1548,15 +1546,14 @@ public final class CommandLineRunnerTest extends TestCase {
     args.add("--env=CUSTOM");
     args.add("--output_manifest=test.MF");
     CommandLineRunner runner = createCommandLineRunner(new String[0]);
-    String expectedMessage = "";
     try {
       runner.doRun();
+      fail("Expected flag usage exception");
     } catch (FlagUsageException e) {
-      expectedMessage = e.getMessage();
+      assertThat(e)
+          .hasMessage(
+              "Bad --js flag. Manifest files cannot be generated when the input is from stdin.");
     }
-    assertThat("Bad --js flag. "
-        + "Manifest files cannot be generated when the input is from stdin.")
-        .isEqualTo(expectedMessage);
   }
 
   public void testTransformAMD() {

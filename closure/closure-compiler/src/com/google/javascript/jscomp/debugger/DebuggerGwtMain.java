@@ -36,7 +36,6 @@ import com.google.javascript.jscomp.CompilerOptions;
 import com.google.javascript.jscomp.JSError;
 import com.google.javascript.jscomp.Result;
 import com.google.javascript.jscomp.SourceFile;
-
 import java.util.Arrays;
 import java.util.List;
 
@@ -88,6 +87,7 @@ public class DebuggerGwtMain implements EntryPoint {
   public void onModuleLoad() {
     externs.setCharacterWidth(80);
     externs.setVisibleLines(5);
+    externs.setText("function Symbol() {}\n");
     externs.addKeyUpHandler(new KeyUpHandler() {
       @Override
       public void onKeyUp(KeyUpEvent event) {
@@ -120,6 +120,9 @@ public class DebuggerGwtMain implements EntryPoint {
   private void createCheckboxes(CellPanel checkboxPanel) {
     for (final CompilationParam param : CompilationParam.getSortedValues()) {
       CheckBox cb = new CheckBox(param.toString());
+      if (param.getJavaInfo() != null) {
+        cb.setTitle("Java API equivalent: " + param.getJavaInfo());
+      }
       cb.setValue(param.getDefaultValue());
       param.apply(options, param.getDefaultValue());
       cb.addClickHandler(new ClickHandler() {

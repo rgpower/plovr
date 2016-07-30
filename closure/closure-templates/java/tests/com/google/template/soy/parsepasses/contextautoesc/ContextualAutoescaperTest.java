@@ -193,7 +193,7 @@ public final class ContextualAutoescaperTest extends TestCase {
             "{namespace ns}\n\n",
             "{template .foo autoescape=\"deprecated-contextual\"}\n",
             "  {@param x: ?}\n",
-            // TODO(user): Re-enable content since it is often (but often not) used to convey
+            // TODO(msamuel): Re-enable content since it is often (but often not) used to convey
             // URLs in place of <link rel> once we can figure out a good way to distinguish the
             // URL use-cases from others.
             //"<meta http-equiv=refresh content='{$x}'>\n",
@@ -1394,6 +1394,26 @@ public final class ContextualAutoescaperTest extends TestCase {
             "{$title}",
             "{/if}\"",
             ">\n",
+            "{/template}"));
+  }
+
+  public void testSvgImage() throws Exception {
+    assertContextualRewriting(
+        join(
+            "{namespace ns}\n\n",
+            "{template .image autoescape=\"deprecated-contextual\"}\n",
+            "  {@param iconPath: ?}\n",
+            "<svg>",
+            "<image xlink:href=\"{$iconPath |filterNormalizeMediaUri |escapeHtmlAttribute}\">",
+            "</svg>\n",
+            "{/template}"),
+        join(
+            "{namespace ns}\n\n",
+            "{template .image autoescape=\"deprecated-contextual\"}\n",
+            "  {@param iconPath: ?}\n",
+            "<svg>",
+            "<image xlink:href=\"{$iconPath}\">",
+            "</svg>\n",
             "{/template}"));
   }
 

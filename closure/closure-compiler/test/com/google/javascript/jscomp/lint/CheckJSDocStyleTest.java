@@ -132,6 +132,14 @@ public final class CheckJSDocStyleTest extends CompilerTestCase {
             "var haskellStyleEquals = a => b => a == b;"));
   }
 
+  public void testGetterSetterMissingJsDoc() {
+    testWarning("class Foo { get twentyone() { return 21; } }", MISSING_JSDOC);
+    testWarning("class Foo { set someString(s) { this.someString_ = s; } }", MISSING_JSDOC);
+
+    testSame("class Foo { /** @return {number} */ get twentyone() { return 21; } }");
+    testSame("class Foo { /** @param {string} s */ set someString(s) { this.someString_ = s; } }");
+  }
+
   public void testMissingJsDoc() {
     testWarning("function f() {}", MISSING_JSDOC);
     testWarning("var f = function() {}", MISSING_JSDOC);
@@ -203,6 +211,7 @@ public final class CheckJSDocStyleTest extends CompilerTestCase {
     testSame("function testSomeFunctionality() {}");
     testSame("var testSomeFunctionality = function() {};");
     testSame("let testSomeFunctionality = function() {};");
+    testSame("window.testSomeFunctionality = function() {};");
     testSame("const testSomeFunctionality = function() {};");
 
     testSame("function setUp() {}");
@@ -349,6 +358,30 @@ public final class CheckJSDocStyleTest extends CompilerTestCase {
             "function f([pattern], namedParam) {",
             "}"),
         WRONG_NUMBER_OF_PARAMS);
+
+    testWarning(
+        LINE_JOINER.join(
+            "/**",
+            " * @param {{",
+            " *   a: (string|undefined),",
+            " *   b: (number|undefined),",
+            " *   c: (boolean|undefined)",
+            " * }} obj",
+            " */",
+            "function create({a = 'hello', b = 8, c = false} = {}) {}"),
+        OPTIONAL_PARAM_NOT_MARKED_OPTIONAL);
+
+    // Same as above except there's an '=' to indicate that it's optional.
+    testSame(
+        LINE_JOINER.join(
+            "/**",
+            " * @param {{",
+            " *   a: (string|undefined),",
+            " *   b: (number|undefined),",
+            " *   c: (boolean|undefined)",
+            " * }=} obj",
+            " */",
+            "function create({a = 'hello', b = 8, c = false} = {}) {}"));
   }
 
   public void testMissingParamWithDestructuringPatternWithDefault() {
@@ -574,32 +607,32 @@ public final class CheckJSDocStyleTest extends CompilerTestCase {
 
   public void testMissingReturn_functionStatement_noWarning() {
     testSame("/** @param {number} x */ function f(x) {}");
+    testSame("/** @constructor */ function f() {}");
     testSame("/** @param {number} x */ function f(x) { function bar() { return x; } }");
     testSame("/** @param {number} x */ function f(x) { return; }");
     testSame("/** @param {number} x @return {number} */ function f(x) { return x; }");
     testSame("/** @param {number} x */ function /** number */ f(x) { return x; }");
-    testSame("/** @param {number} x @constructor */ function f(x) { return x; }");
     testSame("/** @inheritDoc */ function f(x) { return x; }");
     testSame("/** @override */ function f(x) { return x; }");
   }
 
   public void testMissingReturn_assign_noWarning() {
     testSame("/** @param {number} x */ f = function(x) {}");
+    testSame("/** @constructor */ f = function() {}");
     testSame("/** @param {number} x */ f = function(x) { function bar() { return x; } }");
     testSame("/** @param {number} x */ f = function(x) { return; }");
     testSame("/** @param {number} x @return {number} */ f = function(x) { return x; }");
-    testSame("/** @param {number} x @constructor */ f = function(x) { return x; }");
     testSame("/** @inheritDoc */ f = function(x) { return x; }");
     testSame("/** @override */ f = function(x) { return x; }");
   }
 
   public void testMissingReturn_var_noWarning() {
     testSame("/** @param {number} x */ var f = function(x) {}");
+    testSame("/** @constructor */ var f = function() {}");
     testSame("/** @param {number} x */ var f = function(x) { function bar() { return x; } }");
     testSame("/** @param {number} x */ var f = function(x) { return; }");
     testSame("/** @param {number} x @return {number} */ var f = function(x) { return x; }");
     testSame("/** @const {function(number): number} */ var f = function(x) { return x; }");
-    testSame("/** @param {number} x @constructor */ var f = function(x) { return x; }");
     testSame("/** @inheritDoc */ var f = function(x) { return x; }");
     testSame("/** @override */ var f = function(x) { return x; }");
   }
@@ -618,6 +651,8 @@ public final class CheckJSDocStyleTest extends CompilerTestCase {
         MISSING_RETURN_JSDOC);
     testWarning(
         "/** @param {number} x */ function f(x) { if (true) { return x; } }", MISSING_RETURN_JSDOC);
+    testWarning(
+        "/** @param {number} x @constructor */ function f(x) { return x; }", MISSING_RETURN_JSDOC);
   }
 
   public void testMissingReturn_assign() {
@@ -635,6 +670,9 @@ public final class CheckJSDocStyleTest extends CompilerTestCase {
     testWarning(
         "/** @param {number} x */ f = function(x) { if (true) { return x; } }",
         MISSING_RETURN_JSDOC);
+    testWarning(
+        "/** @param {number} x @constructor */ f = function(x) { return x; }",
+        MISSING_RETURN_JSDOC);
   }
 
   public void testMissingReturn_var() {
@@ -651,6 +689,9 @@ public final class CheckJSDocStyleTest extends CompilerTestCase {
         MISSING_RETURN_JSDOC);
     testWarning(
         "/** @param {number} x */ var f = function(x) { if (true) { return x; } }",
+        MISSING_RETURN_JSDOC);
+    testWarning(
+        "/** @param {number} x @constructor */ var f = function(x) { return x; }",
         MISSING_RETURN_JSDOC);
   }
 
