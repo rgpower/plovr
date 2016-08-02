@@ -35,7 +35,7 @@ public class BabelScriptCompiler
    * {@link #compile(String, String)}.
    */
   private BabelScriptCompiler() {
-    super("org/plovr/babel-standalone-6.6.5.js");
+    super("org/plovr/babel-standalone-6.10.3.js");
   }
 
   @Override

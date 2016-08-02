@@ -25,6 +25,7 @@ public class InfoCommand extends AbstractCommandRunner<InfoCommandOptions> {
     String libraryRevision = VersionUtil.getRevision("closure-library");
     String compilerRevision = VersionUtil.getRevision("closure-compiler");
     String templatesRevision = VersionUtil.getRevision("closure-templates");
+    String stylesheetsRevision = VersionUtil.getRevision("closure-stylesheets");
     String plovrRevision = VersionUtil.getRevision("plovr");
 
     // Calculate the max length so that all versions are right-aligned (except
@@ -32,16 +33,19 @@ public class InfoCommand extends AbstractCommandRunner<InfoCommandOptions> {
     int max = Ints.max(
         libraryRevision.length(),
         compilerRevision.length(),
+        stylesheetsRevision.length(),
         templatesRevision.length());
 
     System.out.println("plovr built from revision " + plovrRevision);
     System.out.println("Revision numbers for embedded Closure Tools:");
-    System.out.println("Closure Library:    " +
+    System.out.println("Closure Library:      " +
         Strings.repeat(" ", max - libraryRevision.length()) + libraryRevision);
-    System.out.println("Closure Compiler:   " +
+    System.out.println("Closure Compiler:     " +
         Strings.repeat(" ", max - compilerRevision.length()) + compilerRevision);
-    System.out.println("Closure Templates:  " +
+    System.out.println("Closure Templates:    " +
         Strings.repeat(" ", max - templatesRevision.length()) + templatesRevision);
+    System.out.println("Closure Stylesheets:  " +
+        Strings.repeat(" ", max - stylesheetsRevision.length()) + stylesheetsRevision);
     return 0;
   }
 }
