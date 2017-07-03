@@ -1,6 +1,7 @@
 java_binary(
   name = 'plovr',
   deps = [':plovr-lib'],
+  manifest_file = "plovr.manifest.mf",
   main_class = 'org.plovr.cli.Main')
 
 java_library(

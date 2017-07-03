@@ -122,7 +122,7 @@ public final class Compilation {
     }
 
     try {
-      PlovrClosureCompiler dummyCompiler = new PlovrClosureCompiler(config.getErrorStream());
+      PlovrClosureCompiler dummyCompiler = new PlovrClosureCompiler(new PlovrErrorManager(config));
       Compilation compilation = config.getManifest().getCompilerArguments(
           config.getModuleConfig(), config.getCompilerOptions(dummyCompiler));
       compilation.setConfig(config);
@@ -160,7 +160,7 @@ public final class Compilation {
    * You do not need to run a full compile to get the messages.
    */
   public Iterable<JsMessage> extractMessages() throws CompilationException {
-    PlovrClosureCompiler compiler = new PlovrClosureCompiler(config.getErrorStream());
+    PlovrClosureCompiler compiler = new PlovrClosureCompiler(new PlovrErrorManager(config));
     JsMessageExtractor extractor =
         new JsMessageExtractor(
             new GoogleJsMessageIdGenerator(null),
@@ -183,7 +183,7 @@ public final class Compilation {
       if (config.getCompilationMode() == CompilationMode.RAW) {
         compileRaw();
       } else {
-        PlovrClosureCompiler compiler = new PlovrClosureCompiler(config.getErrorStream());
+        PlovrClosureCompiler compiler = new PlovrClosureCompiler(new PlovrErrorManager(config));
         compile(compiler, config.getCompilerOptions(compiler));
       }
     } catch (Throwable t) {

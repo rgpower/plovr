@@ -52,6 +52,7 @@ public class SoyFile extends LocalFileJsInput {
       value.setShouldDeclareTopLevelNamespaces(options.useClosureLibrary);
       value.setShouldGenerateGoogMsgDefs(options.useClosureLibrary && options.msgBundle == null);
       value.setUseGoogIsRtlForBidiGlobalDir(options.useClosureLibrary && options.msgBundle == null);
+      value.setShouldProvideBothSoyNamespacesAndJsFunctions(options.useClosureLibrary && options.msgBundle != null);
 
       jsSrcOptionsMap.put(options, value);
     }

@@ -1,13 +1,9 @@
 package org.plovr;
 
 import java.io.File;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.*;
 import java.util.logging.Logger;
 
 import com.google.common.base.Function;
@@ -61,6 +57,45 @@ public final class ModuleConfig {
     this.moduleToOutputPath = moduleToOutputPath;
     this.moduleInfoPath = moduleInfoPath;
     this.productionUri = productionUri;
+  }
+
+  public static TreeSet<File> getModuleDependencies(Manifest manifest) {
+    // for modules, search for tests in the parent folders of module inputs
+    TreeSet<Path> folderPaths = Sets.newTreeSet(new Comparator<Path>() {
+      @Override
+      public int compare(Path o1, Path o2) {
+        return o1.toFile().getAbsoluteFile().compareTo(o2.toFile().getAbsoluteFile());
+      }
+    });
+
+    for(JsInput jsInput: manifest.getRequiredInputs()) {
+      File folder = null;
+      if(jsInput instanceof JsSourceFile) {
+        folder = ((JsSourceFile)jsInput).getSource().getParentFile();
+      } else if(jsInput instanceof SoyFile) {
+        folder = ((SoyFile)jsInput).getSource().getParentFile();
+      }
+      if(folder != null) {
+        Path path = Paths.get(folder.toURI());
+        folderPaths.add(path);
+      }
+    }
+    TreeSet<File> folderFiles = Sets.newTreeSet();
+
+    for (Iterator<Path> it = ImmutableSet.copyOf(folderPaths).iterator(); it.hasNext(); ) {
+      Path next = it.next();
+      for (Iterator<Path> it2 = folderPaths.iterator(); it2.hasNext(); ) {
+        Path next2 = it2.next();
+        if (!next2.equals(next) && next2.startsWith(next)) {
+          it2.remove();
+        }
+      }
+    }
+
+    for(Path p: folderPaths) {
+      folderFiles.add(p.toFile());
+    }
+    return folderFiles;
   }
 
   public String getRootModule() {
@@ -266,8 +301,12 @@ public final class ModuleConfig {
     for (JsInput input : inputsInOrder) {
       Set<String> modulesWithInput = findModulesWithInput(
           input, moduleToTransitiveDependencies);
-      String ancestor = findLeastCommonAncestor(modulesWithInput, searcher);
-      moduleToInputs.get(ancestor).add(input);
+
+      // ignore any files that don't belong to modules
+      if (modulesWithInput.size() > 0) {
+        String ancestor = findLeastCommonAncestor(modulesWithInput, searcher);
+        moduleToInputs.get(ancestor).add(input);
+      }
     }
 
     // Because it is a special case, add base.js as the first input in the root

@@ -164,7 +164,14 @@ public class TestHandler extends AbstractGetHandler {
     Manifest manifest = config.getManifest();
     TreeSet<String> testFilePaths = Sets.newTreeSet();
 
-    for (File dependency : manifest.getDependencies()) {
+    Set<File> dependencies;
+    if (config.getModuleConfig() != null) {
+      dependencies = ModuleConfig.getModuleDependencies(manifest);
+    } else {
+      dependencies = manifest.getDependencies();
+    }
+
+    for (File dependency : dependencies) {
       if (!dependency.isDirectory()) {
         continue;
       }

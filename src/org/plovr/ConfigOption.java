@@ -2,7 +2,9 @@ package org.plovr;
 
 import java.io.File;
 import java.nio.charset.Charset;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import org.plovr.ModuleConfig.BadDependencyTreeException;
 import org.plovr.webdriver.ReflectionWebDriverFactory;
@@ -715,7 +717,12 @@ public enum ConfigOption {
     @Override
     public void apply(JsonObject driver, Config.Builder builder) {
       String clazz = driver.get("class").getAsString();
-      WebDriverFactory factory = new ReflectionWebDriverFactory(clazz);
+      JsonObject jsonCaps = driver.getAsJsonObject("capabilities");
+      Map<String,Object> caps = new Gson().fromJson(jsonCaps, Map.class);
+      if(!(caps instanceof  Map)) {
+        caps = new HashMap<>();
+      }
+      WebDriverFactory factory = new ReflectionWebDriverFactory(clazz, caps);
       builder.addTestDriverFactory(factory);
     }
 
@@ -916,6 +923,27 @@ public enum ConfigOption {
     @Override
     public boolean update(String mode, Config.Builder builder) {
       apply(mode, builder);
+      return true;
+    }
+  }),
+
+  WARNING_EXCLUDE_PATHS("warning-exclude-paths", new ConfigUpdater() {
+    @Override
+    public void apply(String pattern, Config.Builder builder) {
+      Pattern path = Pattern.compile(pattern);
+      builder.addWarningExcludePath(path);
+    }
+
+    @Override
+    public void apply(JsonArray warningExcludePaths, Config.Builder builder) {
+      for (JsonElement item : warningExcludePaths) {
+        apply(item.getAsString(), builder);
+      }
+    }
+
+    @Override
+    public boolean reset(Config.Builder builder) {
+      builder.resetWarningExcludePaths();
       return true;
     }
   }),

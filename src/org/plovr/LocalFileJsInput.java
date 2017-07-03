@@ -43,6 +43,8 @@ public abstract class LocalFileJsInput extends AbstractJsInput {
         return new CoffeeFile(name, file);
       } else if (fileName.endsWith(".ts")) {
         return new TypeScriptFile(name, file);
+      } else if (fileName.endsWith(".jsx")) {
+        return new JSXFile(name, file);
       } else {
         return new JsSourceFile(name, file);
       }
