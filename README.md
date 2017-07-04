@@ -1,4 +1,4 @@
-Plovr: A Closure build tool
+Plovr: A Closure build tool [![Build Status](https://travis-ci.org/rgpower/plovr.svg?branch=master)](https://travis-ci.org/rgpower/plovr)
 ===========================
 
 plovr is a build tool that dynamically recompiles JavaScript and Closure
