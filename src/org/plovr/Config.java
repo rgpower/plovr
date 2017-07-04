@@ -205,7 +205,10 @@ public final class Config implements Comparable<Config> {
 
   private final List<LocationMapping> locationMappings;
 
+  private final boolean strictModeInput;
+
   private final Set<Pattern> warningExcludePaths;
+
 
   /**
    * @param id Unique identifier for the configuration. This is used as an
@@ -270,6 +273,7 @@ public final class Config implements Comparable<Config> {
       List<LocationMapping> locationMappings,
       File translationsDirectory,
       String language,
+      boolean strictModeInput,
       Set<Pattern> warningExcludePaths) {
     Preconditions.checkNotNull(defines);
 
@@ -331,6 +335,7 @@ public final class Config implements Comparable<Config> {
     this.locationMappings = locationMappings;
     this.translationsDirectory = translationsDirectory;
     this.language = language;
+    this.strictModeInput = strictModeInput;
     this.warningExcludePaths = warningExcludePaths;
   }
 
@@ -664,7 +669,13 @@ public final class Config implements Comparable<Config> {
     return language;
   }
 
-  public Set<Pattern> getWarningExcludePaths() { return warningExcludePaths; }
+  public boolean isStrictModeInput() {
+    return strictModeInput;
+  }
+
+  public Set<Pattern> getWarningExcludePaths() {
+    return warningExcludePaths;
+  }
 
   /**
    * @param path a relative path, such as "foo/bar_test.js" or
@@ -714,7 +725,7 @@ public final class Config implements Comparable<Config> {
     }
     options.setCodingConvention(new ClosureCodingConvention());
     warningLevel.setOptionsForWarningLevel(options);
-    options.prettyPrint = prettyPrint;
+    options.setPrettyPrint(prettyPrint);
     options.printInputDelimiter = printInputDelimiter;
     if (printInputDelimiter) {
       options.inputDelimiter = "// Input %num%: %name%";
@@ -1192,6 +1203,8 @@ public final class Config implements Comparable<Config> {
 
     private List<LocationMapping> locationMappings = Lists.newArrayList();
 
+    private boolean strictModeInput = false;
+
     private Set<Pattern> warningExcludePaths = Sets.newHashSet();
 
     /**
@@ -1286,6 +1299,7 @@ public final class Config implements Comparable<Config> {
       this.language = config.language;
       this.cssOutputFormat = config.cssOutputFormat;
       this.errorStream = config.errorStream;
+      this.strictModeInput = config.strictModeInput;
       this.warningExcludePaths = config.warningExcludePaths;
     }
 
@@ -1751,6 +1765,10 @@ public final class Config implements Comparable<Config> {
       warningExcludePaths.add(path);
     }
 
+    public void setStrictModeInput(boolean newVal) {
+      this.strictModeInput = newVal;
+    }
+
     public void resetWarningExcludePaths() {
       warningExcludePaths.clear();
     }
@@ -1882,6 +1900,7 @@ public final class Config implements Comparable<Config> {
           locationMappings,
           translationsDirectory,
           language,
+          strictModeInput,
           warningExcludePaths);
 
       return config;

@@ -45,7 +45,7 @@ public class CheckDoubleEquals implements CompilerPass, DiagnosticGroupRegistrar
 
   @Override
   public void process(Node externs, Node root) {
-    NodeTraversal.traverse(compiler, root, new FindDoubleEquals());
+    NodeTraversal.traverseEs6(compiler, root, new FindDoubleEquals());
   }
 
   @Override

@@ -927,6 +927,17 @@ public enum ConfigOption {
     }
   }),
 
+  STRICT_MODE_INPUT("strict-mode-input", new ConfigUpdater() {
+    @Override
+    public void apply(boolean isStrictModeInput, Config.Builder builder) {
+      try {
+        builder.setStrictModeInput(isStrictModeInput);
+      } catch (IllegalArgumentException e) {
+        throw Throwables.propagate(e);
+      }
+    }
+  }),
+
   WARNING_EXCLUDE_PATHS("warning-exclude-paths", new ConfigUpdater() {
     @Override
     public void apply(String pattern, Config.Builder builder) {
