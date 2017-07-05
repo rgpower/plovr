@@ -136,6 +136,16 @@ WebChannelBaseTransport.Channel = function(url, opt_options) {
 
   this.channel_.setExtraHeaders(messageHeaders);
 
+  var initHeaders = (opt_options && opt_options.initMessageHeaders) || null;
+  this.channel_.setInitHeaders(initHeaders);
+
+  var httpHeadersOverwriteParam =
+      opt_options && opt_options.httpHeadersOverwriteParam;
+  if (httpHeadersOverwriteParam &&
+      !goog.string.isEmptyOrWhitespace(httpHeadersOverwriteParam)) {
+    this.channel_.setHttpHeadersOverwriteParam(httpHeadersOverwriteParam);
+  }
+
   /**
    * @private {boolean} Whether to enable CORS.
    */
@@ -169,6 +179,29 @@ WebChannelBaseTransport.Channel = function(url, opt_options) {
   this.channelHandler_ = new WebChannelBaseTransport.Channel.Handler_(this);
 };
 goog.inherits(WebChannelBaseTransport.Channel, goog.events.EventTarget);
+
+
+/**
+ * @override
+ * @suppress {checkTypes}
+ */
+WebChannelBaseTransport.Channel.prototype.addEventListener = function(
+    type, handler, /** boolean= */ opt_capture, opt_handlerScope) {
+  WebChannelBaseTransport.Channel.base(
+      this, 'addEventListener', type, handler, opt_capture, opt_handlerScope);
+};
+
+
+/**
+ * @override
+ * @suppress {checkTypes}
+ */
+WebChannelBaseTransport.Channel.prototype.removeEventListener = function(
+    type, handler, /** boolean= */ opt_capture, opt_handlerScope) {
+  WebChannelBaseTransport.Channel.base(
+      this, 'removeEventListener', type, handler, opt_capture,
+      opt_handlerScope);
+};
 
 
 /**
@@ -259,9 +292,14 @@ WebChannelBaseTransport.Channel.ErrorEvent = function(error) {
   WebChannelBaseTransport.Channel.ErrorEvent.base(this, 'constructor');
 
   /**
-   * Transport specific error code is not to be propagated with the event.
+   * High-level status code.
    */
   this.status = goog.net.WebChannel.ErrorStatus.NETWORK_ERROR;
+
+  /**
+   * @const {WebChannelBase.Error} Internal error code, for debugging use only.
+   */
+  this.errorCode = error;
 };
 goog.inherits(
     WebChannelBaseTransport.Channel.ErrorEvent, goog.net.WebChannel.ErrorEvent);
@@ -401,6 +439,13 @@ WebChannelBaseTransport.ChannelProperties.prototype.commit =
  * @override
  */
 WebChannelBaseTransport.ChannelProperties.prototype.getNonAckedMessageCount =
+    goog.abstractMethod;
+
+
+/**
+ * @override
+ */
+WebChannelBaseTransport.ChannelProperties.prototype.notifyNonAckedMessageCount =
     goog.abstractMethod;
 
 

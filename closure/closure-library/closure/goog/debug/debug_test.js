@@ -16,28 +16,8 @@ goog.provide('goog.debugTest');
 goog.setTestOnly('goog.debugTest');
 
 goog.require('goog.debug');
-goog.require('goog.html.SafeHtml');
 goog.require('goog.structs.Set');
 goog.require('goog.testing.jsunit');
-
-function testExposeException() {
-  var expected = 'Message: message&quot;<br>' +
-      'Url: <a href="view-source:http://fileName&quot;" ' +
-      'target="_new">http://fileName&quot;</a><br>' +
-      'Line: lineNumber&quot;<br><br>' +
-      'Browser stack:<br>' +
-      'stack&quot;-&gt; [end]';
-  var error = {
-    message: 'message"',
-    fileName: 'http://fileName"',
-    lineNumber: 'lineNumber"',
-    stack: 'stack"'
-  };
-  var actualHtml = goog.debug.exposeExceptionAsHtml(error);
-  var actual = goog.html.SafeHtml.unwrap(actualHtml);
-  actual = actual.substring(0, expected.length);
-  assertEquals(expected, actual);
-}
 
 function testMakeWhitespaceVisible() {
   assertEquals(
@@ -97,14 +77,24 @@ function assertContainsSubstring(substring, text) {
 function testDeepExpose() {
   var a = {};
   var b = {};
+  var c = {};
   a.ancestor = a;
   a.otherObject = b;
   a.otherObjectAgain = b;
+  b.nextLevel = c;
+  // Add Uid to a before deepExpose.
+  var aUid = goog.getUid(a);
 
   var deepExpose = goog.debug.deepExpose(a);
 
   assertContainsSubstring(
-      'ancestor = ... reference loop detected ...', deepExpose);
+      'ancestor = ... reference loop detected .id=' + aUid + '. ...',
+      deepExpose);
 
   assertContainsSubstring('otherObjectAgain = {', deepExpose);
+
+  // Make sure we've reset Uids after the deepExpose call.
+  assert(goog.hasUid(a));
+  assertFalse(goog.hasUid(b));
+  assertFalse(goog.hasUid(c));
 }

@@ -31,9 +31,11 @@
 
 goog.provide('goog.html.sanitizer.HtmlSanitizer');
 goog.provide('goog.html.sanitizer.HtmlSanitizer.Builder');
+goog.provide('goog.html.sanitizer.HtmlSanitizerAttributePolicy');
 goog.provide('goog.html.sanitizer.HtmlSanitizerPolicy');
 goog.provide('goog.html.sanitizer.HtmlSanitizerPolicyContext');
 goog.provide('goog.html.sanitizer.HtmlSanitizerPolicyHints');
+goog.provide('goog.html.sanitizer.HtmlSanitizerUrlPolicy');
 
 goog.require('goog.array');
 goog.require('goog.asserts');
@@ -183,6 +185,8 @@ goog.html.sanitizer.HTML_SANITIZER_PROPERTY_DESCRIPTORS_ =
  */
 goog.html.sanitizer.HtmlSanitizer = function(opt_builder) {
   var builder = opt_builder || new goog.html.sanitizer.HtmlSanitizer.Builder();
+
+  builder.installPolicies_();
 
   /** @private {boolean} */
   this.shouldSanitizeTemplateContents_ =
@@ -356,6 +360,12 @@ goog.html.sanitizer.HtmlSanitizer.Builder = function() {
    *     !goog.html.sanitizer.HtmlSanitizerPolicyContext):?string)}
    */
   this.sanitizeCssPolicy_ = undefined;
+
+  /**
+   * True iff policies have been installed for the instance.
+   * @private {boolean}
+   */
+  this.policiesInstalled_ = false;
 };
 
 
@@ -640,6 +650,20 @@ goog.html.sanitizer.HtmlSanitizer.installDefaultPolicy_ = function(
  * @return {!goog.html.sanitizer.HtmlSanitizer}
  */
 goog.html.sanitizer.HtmlSanitizer.Builder.prototype.build = function() {
+  return new goog.html.sanitizer.HtmlSanitizer(this);
+};
+
+/**
+ * Installs the sanitization policies for the attributes.
+ * May only be called once.
+ * @private
+ */
+goog.html.sanitizer.HtmlSanitizer.Builder.prototype.installPolicies_ =
+    function() {
+  if (this.policiesInstalled_) {
+    throw new Error('HtmlSanitizer.Builder.build() can only be used once.');
+  }
+
   if (!this.allowFormTag_) {
     this.tagBlacklist_['FORM'] = true;
   }
@@ -706,8 +730,7 @@ goog.html.sanitizer.HtmlSanitizer.Builder.prototype.build = function() {
         this.attributeWhitelist_, this.attributeOverrideList_, '* STYLE',
         goog.functions.NULL);
   }
-
-  return new goog.html.sanitizer.HtmlSanitizer(this);
+  this.policiesInstalled_ = true;
 };
 
 
@@ -782,12 +805,15 @@ goog.html.sanitizer.HtmlSanitizer.sanitizeCssBlock_ = function(
   if (!policyContext.cssStyle) {
     return null;
   }
-
-  var naiveUriRewriter = /** @type {function(string, string): string} */
-      (function(uri, prop) {
-        policyHints.cssProperty = prop;
-        return policySanitizeUrl(uri, policyHints);
-      });
+  var naiveUriRewriter = function(uri, prop) {
+    policyHints.cssProperty = prop;
+    return goog.html.uncheckedconversions
+        .safeUrlFromStringKnownToSatisfyTypeContract(
+            goog.string.Const.from(
+                'HtmlSanitizerPolicy created with networkRequestUrlPolicy_ ' +
+                'when installing \'* STYLE\' handler.'),
+            policySanitizeUrl(uri, policyHints) || '');
+  };
   var sanitizedStyle = goog.html.SafeStyle.unwrap(
       goog.html.sanitizer.CssSanitizer.sanitizeInlineStyle(
           policyContext.cssStyle, naiveUriRewriter));
@@ -1351,8 +1377,8 @@ goog.html.sanitizer.HtmlSanitizer.prototype.sanitizeAttribute_ = function(
     dirtyNode, attribute) {
   var attributeName = attribute.name;
   if (goog.string.startsWith(
-          goog.html.sanitizer.HTML_SANITIZER_BOOKKEEPING_PREFIX_,
-          attributeName)) {
+          attributeName,
+          goog.html.sanitizer.HTML_SANITIZER_BOOKKEEPING_PREFIX_)) {
     return null;
   }
 

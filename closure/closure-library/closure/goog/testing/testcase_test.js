@@ -16,6 +16,7 @@ goog.provide('goog.testing.TestCaseTest');
 goog.setTestOnly('goog.testing.TestCaseTest');
 
 goog.require('goog.Promise');
+goog.require('goog.Timer');
 goog.require('goog.functions');
 goog.require('goog.string');
 goog.require('goog.testing.ExpectedFailures');
@@ -352,6 +353,48 @@ function testTestCaseReturningPromise_GoogPromiseResolve_PromiseReject() {
     assertEquals(1, result.successCount);
     assertEquals(1, result.errors.length);
     assertEquals('bar', result.errors[0].source);
+  });
+}
+
+function testTestCaseReturningPromise_PromisesInSetUpAndTest() {
+  if (!('Promise' in goog.global)) {
+    return;
+  }
+  var testCase = new goog.testing.TestCase();
+  var events = [];
+  testCase.setUpPage = function() {
+    events.push('setUpPage-called');
+    return goog.Timer.promise().then(function() {
+      events.push('setUpPage-promiseFinished');
+    });
+  };
+  testCase.setUp = function() {
+    events.push('setUp-called');
+    return goog.Timer.promise().then(function() {
+      events.push('setUp-promiseFinished');
+    });
+  };
+  testCase.addNewTest('foo', function() {
+    events.push('foo-called');
+    return goog.Timer.promise().then(function() {
+      events.push('foo-promiseFinished');
+    });
+  });
+
+  // Initially only setUpPage should have been called.
+  return testCase.runTestsReturningPromise().then(function(result) {
+    assertTrue(result.complete);
+    assertEquals(1, result.totalCount);
+    assertEquals(1, result.runCount);
+    assertEquals(1, result.successCount);
+    assertEquals(0, result.errors.length);
+
+    assertArrayEquals(
+        [
+          'setUpPage-called', 'setUpPage-promiseFinished', 'setUp-called',
+          'setUp-promiseFinished', 'foo-called', 'foo-promiseFinished'
+        ],
+        events);
   });
 }
 
@@ -814,5 +857,86 @@ function testCurrentTestNamePromise() {
         reject(assertionFailureOrResolveException);
       }
     });
+  });
+}
+
+var testDoneTestsSeen = [];
+var testDoneErrorsSeen = {};
+var testDoneRuntime = {};
+/**
+ * @param {goog.testing.TestCase} test
+ * @param {Array<string>} errors
+ */
+function storeCallsAndErrors(test, errors) {
+  testDoneTestsSeen.push(test.name);
+  testDoneErrorsSeen[test.name] = [];
+  for (var i = 0; i < errors.length; i++) {
+    testDoneErrorsSeen[test.name].push(errors[i].split('\n')[0]);
+  }
+  testDoneRuntime[test.name] = test.getElapsedTime();
+}
+/**
+ * @param {Array<goog.testing.TestCase>} expectedTests
+ * @param {Array<Array<string>>} expectedErrors
+ */
+function assertStoreCallsAndErrors(expectedTests, expectedErrors) {
+  assertArrayEquals(expectedTests, testDoneTestsSeen);
+  for (var i = 0; i < expectedTests.length; i++) {
+    var name = expectedTests[i];
+    assertArrayEquals(expectedErrors, testDoneErrorsSeen[name]);
+    assertEquals(typeof testDoneRuntime[testDoneTestsSeen[i]], 'number');
+  }
+}
+
+function testCallbackToTestDoneOk() {
+  testDoneTestsSeen = [];
+  testDoneErrorsSeen = {};
+  testDoneRuntime = {};
+  var testCase = new goog.testing.TestCase('fooCase');
+  testCase.addNewTest('foo', okGoogPromise);
+  testCase.setTestDoneCallback(storeCallsAndErrors);
+  return testCase.runTestsReturningPromise().then(function() {
+    assertStoreCallsAndErrors(['foo'], []);
+  });
+}
+
+function testCallbackToTestDoneFail() {
+  testDoneTestsSeen = [];
+  testDoneErrorsSeen = [];
+  testDoneRuntime = {};
+  var testCase = new goog.testing.TestCase('fooCase');
+  testCase.addNewTest('foo', failGoogPromise);
+  testCase.setTestDoneCallback(storeCallsAndErrors);
+  return testCase.runTestsReturningPromise().then(function() {
+    assertStoreCallsAndErrors(['foo'], ['ERROR in foo']);
+  });
+}
+
+/**
+ * @return {!Promise<null>}
+ */
+function mockTestName() {
+  return failGoogPromise();
+}
+
+function testInitializeTestCase() {
+  testDoneTestsSeen = [];
+  testDoneErrorsSeen = [];
+  var testCase = new goog.testing.TestCase('fooCase');
+  testCase.getAutoDiscoveryPrefix = function() {
+    return 'mockTestName';
+  };
+  var outerTestCase = goog.testing.TestCase.getActiveTestCase();
+  goog.global['G_testRunner'].testCase = null;
+  goog.testing.TestCase.initializeTestCase(testCase, storeCallsAndErrors);
+  var checkAfterInitialize = goog.testing.TestCase.getActiveTestCase();
+  goog.global['G_testRunner'].testCase = outerTestCase;
+  // This asserts require G_testRunner to be set.
+  assertEquals(checkAfterInitialize, testCase);
+  assertEquals(goog.testing.TestCase.getActiveTestCase(), outerTestCase);
+  // If the individual test feature is used to selecte this test, erase it.
+  testCase.setTestsToRun(null);
+  return testCase.runTestsReturningPromise().then(function() {
+    assertStoreCallsAndErrors(['mockTestName'], ['ERROR in mockTestName']);
   });
 }
