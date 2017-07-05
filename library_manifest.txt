@@ -105,6 +105,7 @@ dom/abstractrange.js
 dom/animationframe/animationframe.js
 dom/animationframe/polyfill.js
 dom/annotate.js
+dom/asserts.js
 dom/attr.js
 dom/browserfeature.js
 dom/browserrange/abstractrange.js
@@ -123,6 +124,7 @@ dom/dom.js
 dom/fontsizemonitor.js
 dom/forms.js
 dom/fullscreen.js
+dom/htmlelement.js
 dom/iframe.js
 dom/inputtype.js
 dom/iter.js
@@ -215,6 +217,7 @@ events/inputhandler.js
 events/keycodes.js
 events/keyhandler.js
 events/keynames.js
+events/keys.js
 events/listenable.js
 events/listener.js
 events/listenermap.js
@@ -312,6 +315,7 @@ html/sanitizer/tagwhitelist.js
 html/sanitizer/unsafe.js
 html/silverlight.js
 html/testing.js
+html/textextractor.js
 html/trustedresourceurl.js
 html/uncheckedconversions.js
 html/utils.js
@@ -324,6 +328,11 @@ i18n/compactnumberformatsymbols.js
 i18n/compactnumberformatsymbolsext.js
 i18n/currency.js
 i18n/currencycodemap.js
+i18n/dateintervalformat.js
+i18n/dateintervalpatterns.js
+i18n/dateintervalpatternsext.js
+i18n/dateintervalsymbols.js
+i18n/dateintervalsymbolsext.js
 i18n/datetimeformat.js
 i18n/datetimeparse.js
 i18n/datetimepatterns.js
@@ -344,10 +353,10 @@ i18n/uchar/namefetcher.js
 i18n/uchar/remotenamefetcher.js
 i18n/uchar.js
 i18n/ucharnames.js
+iter/es6.js
 iter/iter.js
 json/evaljsonprocessor.js
 json/hybrid.js
-json/hybridjsonprocessor.js
 json/json.js
 json/json_perf.js
 json/nativejsonprocessor.js
@@ -492,6 +501,7 @@ net/mockiframeio.js
 net/multiiframeloadmonitor.js
 net/networkstatusmonitor.js
 net/networktester.js
+net/rpc/httpcors.js
 net/streams/base64pbstreamparser.js
 net/streams/base64streamdecoder.js
 net/streams/jsonstreamparser.js
@@ -591,6 +601,7 @@ storage/mechanism/mechanismtester.js
 storage/mechanism/prefixedmechanism.js
 storage/richstorage.js
 storage/storage.js
+storage/storagetester.js
 string/const.js
 string/linkify.js
 string/newlines.js
@@ -620,7 +631,6 @@ structs/stringset.js
 structs/structs.js
 structs/treenode.js
 structs/trie.js
-structs/weak/weak.js
 style/bidi.js
 style/cursor.js
 style/style.js
@@ -658,6 +668,7 @@ testing/i18n/asserts.js
 testing/jstdasyncwrapper.js
 testing/jstdtestcaseadapter.js
 testing/jsunit.js
+testing/jsunitexception.js
 testing/loosemock.js
 testing/messaging/mockmessagechannel.js
 testing/messaging/mockmessageevent.js
@@ -674,6 +685,7 @@ testing/mockrange.js
 testing/mockstorage.js
 testing/mockuseragent.js
 testing/multitestrunner.js
+testing/net/mockiframeio.js
 testing/net/xhrio.js
 testing/net/xhriopool.js
 testing/objectpropertystring.js
@@ -732,13 +744,10 @@ ui/charpicker.js
 ui/checkbox.js
 ui/checkboxmenuitem.js
 ui/checkboxrenderer.js
-ui/colorbutton.js
-ui/colorbuttonrenderer.js
 ui/colormenubutton.js
 ui/colormenubuttonrenderer.js
 ui/colorpalette.js
 ui/colorpicker.js
-ui/colorsplitbehavior.js
 ui/combobox.js
 ui/component.js
 ui/container.js
@@ -852,7 +861,6 @@ ui/separator.js
 ui/serverchart.js
 ui/slider.js
 ui/sliderbase.js
-ui/splitbehavior.js
 ui/splitpane.js
 ui/style/app/buttonrenderer.js
 ui/style/app/menubuttonrenderer.js
