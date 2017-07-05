@@ -42,7 +42,6 @@ goog.require('goog.reflect');
 goog.require('goog.string');
 goog.require('goog.userAgent');
 
-goog.forwardDeclare('goog.events.BrowserEvent');
 goog.forwardDeclare('goog.events.Event');
 
 
@@ -221,7 +220,8 @@ goog.style.getComputedStyle = function(element, property) {
  */
 goog.style.getCascadedStyle = function(element, style) {
   // TODO(nicksantos): This should be documented to return null. #fixTypes
-  return element.currentStyle ? element.currentStyle[style] : null;
+  return /** @type {string} */ (
+      element.currentStyle ? element.currentStyle[style] : null);
 };
 
 
@@ -1376,6 +1376,7 @@ goog.style.setSafeStyleSheet = function(element, safeStyleSheet) {
     // cssText is a defined property and otherwise fall back to innerHTML.
     element.cssText = stylesString;
   } else {
+    // Setting textContent doesn't work in Safari, see b/29340337.
     element.innerHTML = stylesString;
   }
 };
@@ -1572,9 +1573,11 @@ goog.style.getContentBoxSize = function(element) {
     // If IE in CSS1Compat mode than just use the width and height.
     // If we have a boxSizing then fall back on measuring the borders etc.
     var width = goog.style.getIePixelValue_(
-        element, ieCurrentStyle.width, 'width', 'pixelWidth');
+        element, /** @type {string} */ (ieCurrentStyle.width), 'width',
+        'pixelWidth');
     var height = goog.style.getIePixelValue_(
-        element, ieCurrentStyle.height, 'height', 'pixelHeight');
+        element, /** @type {string} */ (ieCurrentStyle.height), 'height',
+        'pixelHeight');
     return new goog.math.Size(width, height);
   } else {
     var borderBoxSize = goog.style.getBorderBoxSize(element);
@@ -1814,7 +1817,7 @@ goog.style.getFontFamily = function(el) {
   if (doc.body.createTextRange && goog.dom.contains(doc, el)) {
     var range = doc.body.createTextRange();
     range.moveToElementText(el);
-    /** @preserveTry */
+
     try {
       font = range.queryCommandValue('FontName');
     } catch (e) {
