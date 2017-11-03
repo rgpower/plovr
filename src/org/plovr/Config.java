@@ -206,9 +206,7 @@ public final class Config implements Comparable<Config> {
   private final List<LocationMapping> locationMappings;
 
   private final boolean strictModeInput;
-
   private final Set<Pattern> warningExcludePaths;
-
 
   /**
    * @param id Unique identifier for the configuration. This is used as an
@@ -673,9 +671,7 @@ public final class Config implements Comparable<Config> {
     return strictModeInput;
   }
 
-  public Set<Pattern> getWarningExcludePaths() {
-    return warningExcludePaths;
-  }
+  public Set<Pattern> getWarningExcludePaths() { return warningExcludePaths; }
 
   /**
    * @param path a relative path, such as "foo/bar_test.js" or
@@ -1203,7 +1199,7 @@ public final class Config implements Comparable<Config> {
 
     private List<LocationMapping> locationMappings = Lists.newArrayList();
 
-    private boolean strictModeInput = false;
+    private boolean strictModeInput;
 
     private Set<Pattern> warningExcludePaths = Sets.newHashSet();
 
@@ -1761,12 +1757,12 @@ public final class Config implements Comparable<Config> {
       this.errorStream = Preconditions.checkNotNull(errorStream);
     }
 
-    public void addWarningExcludePath(Pattern path) {
-      warningExcludePaths.add(path);
-    }
-
     public void setStrictModeInput(boolean newVal) {
       this.strictModeInput = newVal;
+    }
+
+    public void addWarningExcludePath(Pattern path) {
+      warningExcludePaths.add(path);
     }
 
     public void resetWarningExcludePaths() {

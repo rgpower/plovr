@@ -293,7 +293,7 @@ public enum ConfigOption {
     @Override
     public void apply(String mode, Config.Builder builder) {
       try {
-        builder.setLanguageIn(LanguageMode.valueOf(mode));
+        builder.setLanguageIn(LanguageMode.fromString(mode));
       } catch (IllegalArgumentException e) {
         throw Throwables.propagate(e);
       }
@@ -304,7 +304,7 @@ public enum ConfigOption {
     @Override
     public void apply(String mode, Config.Builder builder) {
       try {
-        builder.setLanguageOut(LanguageMode.valueOf(mode));
+        builder.setLanguageOut(LanguageMode.fromString(mode));
       } catch (IllegalArgumentException e) {
         throw Throwables.propagate(e);
       }
