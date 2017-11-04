@@ -670,6 +670,7 @@ public final class Config implements Comparable<Config> {
   public boolean isStrictModeInput() {
     return strictModeInput;
   }
+  public Set<Pattern> getWarningExcludePaths() { return warningExcludePaths; }
 
   public Set<Pattern> getWarningExcludePaths() { return warningExcludePaths; }
 
@@ -1200,6 +1201,7 @@ public final class Config implements Comparable<Config> {
     private List<LocationMapping> locationMappings = Lists.newArrayList();
 
     private boolean strictModeInput;
+    private Set<Pattern> warningExcludePaths = Sets.newHashSet();
 
     private Set<Pattern> warningExcludePaths = Sets.newHashSet();
 
