@@ -125,7 +125,11 @@ goog.net.WebChannel = function() {};
  *
  * fastHandshake: experimental feature to speed up the initial handshake, e.g.
  * leveraging QUIC 0-RTT, in-band version negotiation. This option defaults
- * to false.
+ * to false. To set this option to true, backgroundChannelTest needs be set
+ * to true too. Note it is allowed to send messages before the Open event is
+ * received after a channel has been connected. In order to enable 0-RTT,
+ * messages may be encoded as part of URL and therefore there will be a size
+ * limit for those immediate messages (e.g. 4KB).
  *
  * @typedef {{
  *   messageHeaders: (!Object<string, string>|undefined),
@@ -154,7 +158,7 @@ goog.net.WebChannel.Options;
  * Unicode strings (sent by the server) may or may not need be escaped, as
  * decided by the server.
  *
- * @typedef {(ArrayBuffer|Blob|Object<string, string>|Array)}
+ * @typedef {(ArrayBuffer|Blob|Object<string, Object|string>|Array)}
  */
 goog.net.WebChannel.MessageData;
 
@@ -174,6 +178,15 @@ goog.net.WebChannel.prototype.close = goog.abstractMethod;
 /**
  * Sends a message to the server that maintains the other end point of
  * the WebChannel.
+ *
+ * O-RTT behavior:
+ * 1. messages sent before open() is called will always be delivered as
+ *    part of the handshake, i.e. with 0-RTT
+ * 2. messages sent after open() is called but before the OPEN event
+ *    is received will be delivered as part of the handshake if
+ *    send() is called from the same execution context as open().
+ * 3. otherwise, those messages will be buffered till the handshake
+ *    is completed (which will fire the OPEN event).
  *
  * @param {!goog.net.WebChannel.MessageData} message The message to send.
  */
@@ -341,6 +354,16 @@ goog.net.WebChannel.RuntimeProperties.prototype.getConcurrentRequestLimit =
  * the channel is created.
  */
 goog.net.WebChannel.RuntimeProperties.prototype.isSpdyEnabled =
+    goog.abstractMethod;
+
+
+/**
+ * @return {number} The number of requests (for sending messages to the server)
+ * that are pending. If this number is approaching the value of
+ * getConcurrentRequestLimit(), client-to-server message delivery may experience
+ * a higher latency.
+ */
+goog.net.WebChannel.RuntimeProperties.prototype.getPendingRequestCount =
     goog.abstractMethod;
 
 

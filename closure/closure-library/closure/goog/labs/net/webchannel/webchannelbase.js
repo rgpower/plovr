@@ -23,6 +23,7 @@ goog.provide('goog.labs.net.webChannel.WebChannelBase');
 goog.require('goog.Uri');
 goog.require('goog.array');
 goog.require('goog.asserts');
+goog.require('goog.async.run');
 goog.require('goog.debug.TextFormatter');
 goog.require('goog.json');
 goog.require('goog.labs.net.webChannel.BaseTestChannel');
@@ -929,8 +930,9 @@ WebChannelBase.prototype.sendMap = function(map, opt_context) {
 
   this.outgoingMaps_.push(
       new Wire.QueuedMap(this.nextMapId_++, map, opt_context));
-  if (this.state_ == WebChannelBase.State.OPENING ||
-      this.state_ == WebChannelBase.State.OPENED) {
+
+  // Messages need be buffered during OPENING to avoid server-side race
+  if (this.state_ == WebChannelBase.State.OPENED) {
     this.ensureForwardChannel_();
   }
 };
@@ -1206,7 +1208,7 @@ WebChannelBase.prototype.open_ = function() {
 
   // http-session-id to be generated as the response
   if (this.getBackgroundChannelTest() && this.getHttpSessionIdParam()) {
-    uri.setParameterValues(
+    uri.setParameterValue(
         WebChannel.X_HTTP_SESSION_ID, this.getHttpSessionIdParam());
   }
 
@@ -1219,7 +1221,14 @@ WebChannelBase.prototype.open_ = function() {
   }
 
   this.forwardChannelRequestPool_.addRequest(request);
-  request.xmlHttpPost(uri, requestText, true);
+
+  // Check the option and use GET to enable QUIC 0-RTT
+  if (this.fastHandshake_) {
+    uri.setParameterValue('$req', requestText);
+    request.xmlHttpPost(uri, null, true);  // Send as a GET
+  } else {
+    request.xmlHttpPost(uri, requestText, true);
+  }
 };
 
 
@@ -1336,8 +1345,12 @@ WebChannelBase.prototype.ensureBackChannel_ = function() {
   }
 
   this.backChannelAttemptId_ = 1;
-  this.backChannelTimerId_ = requestStats.setTimeout(
-      goog.bind(this.onStartBackChannelTimer_, this), 0);
+
+  // Use async.run instead of setTimeout(0) to avoid the 1s message delay
+  // from chrome/firefox background tabs
+  // backChannelTimerId_ stays unset, as with setTimeout(0)
+  goog.async.run(this.onStartBackChannelTimer_, this);
+
   this.backChannelRetryCount_ = 0;
 };
 
@@ -1416,7 +1429,7 @@ WebChannelBase.prototype.startBackChannel_ = function() {
   }
 
   this.backChannelRequest_.xmlHttpGet(
-      uri, true /* decodeChunks */, this.hostPrefix_, false /* opt_noClose */);
+      uri, true /* decodeChunks */, this.hostPrefix_);
 
   this.channelDebug_.debug('New Request created');
 };
@@ -2084,7 +2097,7 @@ WebChannelBase.prototype.createDataUri = function(
  */
 WebChannelBase.prototype.createXhrIo = function(hostPrefix) {
   if (hostPrefix && !this.supportsCrossDomainXhrs_) {
-    throw Error('Can\'t create secondary domain capable XhrIo object.');
+    throw new Error('Can\'t create secondary domain capable XhrIo object.');
   }
   var xhr = new goog.net.XhrIo();
   xhr.setWithCredentials(this.supportsCrossDomainXhrs_);

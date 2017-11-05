@@ -77,6 +77,7 @@ debug/devcss/devcssrunner.js
 debug/divconsole.js
 debug/entrypointregistry.js
 debug/error.js
+debug/errorcontext.js
 debug/errorhandler.js
 debug/errorhandlerweakdep.js
 debug/errorreporter.js
@@ -159,6 +160,7 @@ dom/tagname.js
 dom/tags.js
 dom/textrange.js
 dom/textrangeiterator.js
+dom/uri.js
 dom/vendor.js
 dom/viewportsizemonitor.js
 dom/xml.js
@@ -348,10 +350,10 @@ i18n/numberformatsymbolsext.js
 i18n/ordinalrules.js
 i18n/pluralrules.js
 i18n/timezone.js
+i18n/uchar.js
 i18n/uchar/localnamefetcher.js
 i18n/uchar/namefetcher.js
 i18n/uchar/remotenamefetcher.js
-i18n/uchar.js
 i18n/ucharnames.js
 iter/es6.js
 iter/iter.js
@@ -372,6 +374,7 @@ labs/iterable/iterable.js
 labs/mock/mock.js
 labs/mock/verificationmode.js
 labs/net/image.js
+labs/net/webchannel.js
 labs/net/webchannel/basetestchannel.js
 labs/net/webchannel/channel.js
 labs/net/webchannel/channelrequest.js
@@ -384,7 +387,6 @@ labs/net/webchannel/webchannelbasetransport.js
 labs/net/webchannel/webchanneldebug.js
 labs/net/webchannel/wire.js
 labs/net/webchannel/wirev8.js
-labs/net/webchannel.js
 labs/net/webchanneltransport.js
 labs/net/webchanneltransportfactory.js
 labs/net/xhr.js

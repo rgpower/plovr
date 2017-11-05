@@ -23,6 +23,7 @@ public final class VersionUtil {
       put("closure-library", readRevisionFromJar("closure-library")).
       put("closure-compiler", readRevisionFromJar("closure-compiler")).
       put("closure-templates", readRevisionFromJar("closure-templates")).
+      put("closure-stylesheets", readRevisionFromJar("closure-stylesheets")).
       put("plovr", readRevisionFromJar("plovr")).
       build();
 

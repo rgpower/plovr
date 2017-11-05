@@ -489,7 +489,8 @@ public final class Manifest {
           comma.join(Lists.transform(input.getProvides(), toJsString)) +
           "], [" +
           comma.join(Lists.transform(input.getRequires(), toJsString)) +
-          "]);\n");
+          // TODO support {'lang': 'es6', 'module': 'goog'} etc...
+          "], {});\n");
     }
     return builder.toString();
   }

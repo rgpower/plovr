@@ -4,9 +4,6 @@ import java.io.IOException;
 
 import org.plovr.util.VersionUtil;
 
-import com.google.common.base.Strings;
-import com.google.common.primitives.Ints;
-
 
 public class InfoCommand extends AbstractCommandRunner<InfoCommandOptions> {
 
@@ -25,23 +22,16 @@ public class InfoCommand extends AbstractCommandRunner<InfoCommandOptions> {
     String libraryRevision = VersionUtil.getRevision("closure-library");
     String compilerRevision = VersionUtil.getRevision("closure-compiler");
     String templatesRevision = VersionUtil.getRevision("closure-templates");
+    String stylesheetsRevision = VersionUtil.getRevision("closure-stylesheets");
     String plovrRevision = VersionUtil.getRevision("plovr");
 
-    // Calculate the max length so that all versions are right-aligned (except
-    // for plovr because its Hg hash is so long).
-    int max = Ints.max(
-        libraryRevision.length(),
-        compilerRevision.length(),
-        templatesRevision.length());
-
-    System.out.println("plovr built from revision " + plovrRevision);
+    System.out.println(String.format("plovr built from revision %s", plovrRevision));
     System.out.println("Revision numbers for embedded Closure Tools:");
-    System.out.println("Closure Library:    " +
-        Strings.repeat(" ", max - libraryRevision.length()) + libraryRevision);
-    System.out.println("Closure Compiler:   " +
-        Strings.repeat(" ", max - compilerRevision.length()) + compilerRevision);
-    System.out.println("Closure Templates:  " +
-        Strings.repeat(" ", max - templatesRevision.length()) + templatesRevision);
+    final String INFO_FORMAT = "%-20s: %10s";
+    System.out.println(String.format(INFO_FORMAT, "Closure Library", libraryRevision));
+    System.out.println(String.format(INFO_FORMAT, "Closure Compiler", compilerRevision));
+    System.out.println(String.format(INFO_FORMAT, "Closure Templates", templatesRevision));
+    System.out.println(String.format(INFO_FORMAT, "Closure Stylesheets", stylesheetsRevision));
     return 0;
   }
 }
