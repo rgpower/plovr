@@ -123,13 +123,14 @@ public class InputFileHandler extends AbstractGetHandler {
     // May require moving the method to ModuleConfig.
     SanitizedContent.ContentKind scHtml = SanitizedContent.ContentKind.HTML;
     SoyMapData mapData = new SoyMapData(
-        "moduleInfo", moduleInfo == null ? null : ordainAsSafe(moduleInfo, scHtml),
-        "moduleUris", moduleUris == null ? null : ordainAsSafe(moduleUris, scHtml),
-        "filesAsJsonArray", ordainAsSafe(inputUrls.toString(), scHtml),
-        "path", ordainAsSafe(path, scHtml));
+        "moduleInfo", moduleInfo == null ? null : ordainAsSafe(moduleInfo, SanitizedContent.ContentKind.JS),
+        "moduleUris", moduleUris == null ? null : ordainAsSafe(moduleUris, SanitizedContent.ContentKind.JS),
+        "filesAsJsonArray", ordainAsSafe(inputUrls.toString(), SanitizedContent.ContentKind.JS),
+        "path", path);
 
     return TOFU.newRenderer("org.plovr.raw")
             .setData(mapData)
+            .setContentKind(SanitizedContent.ContentKind.JS)
             .render();
   }
 

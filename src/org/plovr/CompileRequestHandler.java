@@ -123,12 +123,11 @@ public class CompileRequestHandler extends AbstractGetHandler {
               moduleNameToUri);
 
           String src = moduleNameToUri.apply(moduleConfig.getRootModule());
-          SanitizedContent.ContentKind scHtml = SanitizedContent.ContentKind.HTML;
-          SoyMapData mapData = new SoyMapData("src",
-                  src == null ? null : UnsafeSanitizedContentOrdainer
-                                         .ordainAsSafe(src, scHtml));
-          String js = TOFU.newRenderer("org.plovr.loadRootModule").setData(
-              mapData).render();
+          SoyMapData mapData = new SoyMapData("src", src);
+          String js = TOFU.newRenderer("org.plovr.loadRootModule")
+              .setContentKind(SanitizedContent.ContentKind.JS)
+              .setData(mapData)
+              .render();
           appendable.append(js);
         } else {
           appendable.append(compilation.getCodeForRootModule(isDebugMode,

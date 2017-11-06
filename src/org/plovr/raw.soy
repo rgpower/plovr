@@ -1,11 +1,11 @@
 {namespace org.plovr}
 
 
-{template .raw}
- {@param? moduleInfo: html}
- {@param? moduleUris: html}
- {@param filesAsJsonArray: html}
- {@param path: html}
+{template .raw kind="js"}
+ {@param? moduleInfo: js}
+ {@param? moduleUris: js}
+ {@param filesAsJsonArray: js}
+ {@param path: string}
 CLOSURE_NO_DEPS = true;
 {if $moduleInfo}
 PLOVR_MODULE_INFO={$moduleInfo};
@@ -44,8 +44,7 @@ PLOVR_MODULE_USE_DEBUG_MODE=true;
 {/template}
 
 
-{template .loadRootModule}
-{@param src: html}
+{template .loadRootModule kind="js"}
+{@param src: string}
 document.write('<script type="text/javascript" src="{$src}"></script>');
 {/template}
-
