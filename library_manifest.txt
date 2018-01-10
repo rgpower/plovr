@@ -422,6 +422,7 @@ labs/useragent/test_agents.js
 labs/useragent/util.js
 labs/useragent/verifier.js
 loader/abstractmodulemanager.js
+loader/activemodulemanager.js
 locale/countries.js
 locale/defaultlocalenameconstants.js
 locale/genericfontnames.js
