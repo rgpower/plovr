@@ -52,7 +52,7 @@ abstract class AbstractJavaScriptBasedCompiler<T extends Exception> {
    * If the compiler encounters an error, an exception will be thrown.
    * The name of the input is specified so it can be included in error messages.
    */
-  public final synchronized String compile(String sourceCode,
+  public final String compile(String sourceCode,
       String sourceName) throws T {
 
     try {
