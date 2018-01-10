@@ -21,7 +21,7 @@
  * <p>
  * This file contains utilities that should only be called by Soy-generated
  * JS code. Please do not use these functions directly from
- * your hand-writen code. Their names all start with '$$', or exist within the
+ * your hand-written code. Their names all start with '$$', or exist within the
  * soydata.VERY_UNSAFE namespace.
  *
  * <p>TODO(lukes): ensure that the above pattern is actually followed
@@ -55,6 +55,7 @@ goog.require('goog.soy.data.SanitizedCss');
 goog.require('goog.soy.data.SanitizedHtml');
 goog.require('goog.soy.data.SanitizedHtmlAttribute');
 goog.require('goog.soy.data.SanitizedJs');
+goog.require('goog.soy.data.SanitizedStyle');
 goog.require('goog.soy.data.SanitizedTrustedResourceUri');
 goog.require('goog.soy.data.SanitizedUri');
 goog.require('goog.soy.data.UnsanitizedText');
@@ -360,8 +361,22 @@ soydata.VERY_UNSAFE.ordainSanitizedHtmlAttribute =
 
 
 /**
+ * Takes a leap of faith that the provided content is "safe" to use as STYLE
+ * in a style attribute.
+ *
+ * @param {*} content CSS, such as {@code color:#c3d9ff}.
+ * @return {!goog.soy.data.SanitizedStyle} Sanitized style wrapper that
+ *     indicates to Soy there is no need to escape or filter when printed in CSS
+ *     context.
+ */
+soydata.VERY_UNSAFE.ordainSanitizedStyle =
+    soydata.$$makeSanitizedContentFactoryWithDefaultDirOnly_(
+        goog.soy.data.SanitizedStyle);
+
+
+/**
  * Takes a leap of faith that the provided content is "safe" to use as CSS
- * in a style attribute or block.
+ * in a style block.
  *
  * @param {*} content CSS, such as {@code color:#c3d9ff}.
  * @return {!goog.soy.data.SanitizedCss} Sanitized CSS wrapper that indicates to
@@ -591,8 +606,9 @@ soy.$$getDelegateFn = function(
     return soy.$$EMPTY_TEMPLATE_FN_;
   } else {
     throw Error(
-        'Found no active impl for delegate call to "' + delTemplateId + ':' +
-            delTemplateVariant + '" (and not allowemptydefault="true").');
+        'Found no active impl for delegate call to "' + delTemplateId +
+        (delTemplateVariant ? ':' + delTemplateVariant : '') +
+        '" (and delcall does not set allowemptydefault="true").');
   }
 };
 
@@ -802,6 +818,18 @@ soydata.VERY_UNSAFE.$$ordainSanitizedUriForInternalBlocks =
 soydata.VERY_UNSAFE.$$ordainSanitizedAttributesForInternalBlocks =
     soydata.$$makeSanitizedContentFactoryWithDefaultDirOnlyForInternalBlocks_(
         goog.soy.data.SanitizedHtmlAttribute);
+
+
+/**
+ * Creates kind="style" block contents (internal use only).
+ *
+ * @param {*} content Text.
+ * @return {goog.soy.data.SanitizedStyle|soydata.$$EMPTY_STRING_} Wrapped
+ *     result.
+ */
+soydata.VERY_UNSAFE.$$ordainSanitizedStyleForInternalBlocks =
+    soydata.$$makeSanitizedContentFactoryWithDefaultDirOnlyForInternalBlocks_(
+        goog.soy.data.SanitizedStyle);
 
 
 /**
@@ -1148,20 +1176,6 @@ soy.$$filterHtmlElementName = function(value) {
   // ... {param tagName kind="html"}{$userInput}{/param} ...
   // ... <{$tagName}>Hello World</{$tagName}>
   return soy.esc.$$filterHtmlElementNameHelper(value);
-};
-
-
-/**
- * Escapes characters in the value to make it valid content for a JS string
- * literal.
- *
- * @param {*} value The value to escape. May not be a string, but the value
- *     will be coerced to a string.
- * @return {string} An escaped version of value.
- * @deprecated
- */
-soy.$$escapeJs = function(value) {
-  return soy.$$escapeJsString(value);
 };
 
 
@@ -1823,6 +1837,7 @@ soy.asserts.assertType = function(condition, paramName, param, jsDocTypeStr) {
   }
   return param;
 };
+
 
 // -----------------------------------------------------------------------------
 // Used for inspecting Soy template information from rendered pages.

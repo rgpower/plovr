@@ -16,6 +16,7 @@ import org.plovr.util.SoyDataUtil;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Maps;
 import com.google.common.io.Files;
 import com.google.gson.JsonElement;
@@ -30,6 +31,7 @@ import com.google.template.soy.data.SoyData;
 import com.google.template.soy.data.restricted.StringData;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.soyparse.ParseException;
+import com.google.template.soy.soyparse.PluginResolver;
 import com.google.template.soy.soyparse.SoyFileParser;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.tofu.SoyTofu;
@@ -123,11 +125,15 @@ public class SoyRequestHandler implements HttpHandler {
     ErrorReporter.Checkpoint checkpoint = errorReporter.checkpoint();
     SoyFileParser parser = new SoyFileParser(
         new SoyTypeRegistry(),
+        PluginResolver.nullResolver(
+            PluginResolver.Mode.REQUIRE_DEFINITIONS,
+            ErrorReporter.exploding()),
         new IncrementingIdGenerator(),
         Files.newReader(soyFile, Charsets.UTF_8),
         SoyFileKind.SRC,
         relativePath,
-        errorReporter);
+        errorReporter,
+        ImmutableSet.of("experimental_map"));
     SoyFileNode node = parser.parseSoyFile();
 
     if (errorReporter.errorsSince(checkpoint)) {

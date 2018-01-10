@@ -40,7 +40,6 @@ import com.google.template.soy.msgs.SoyMsgBundle;
 import com.google.template.soy.msgs.SoyMsgBundleHandler;
 import com.google.template.soy.msgs.SoyMsgException;
 import com.google.template.soy.msgs.SoyMsgPlugin;
-import com.google.template.soy.xliffmsgplugin.XliffMsgPluginModule;
 
 import org.plovr.util.Pair;
 import org.plovr.webdriver.WebDriverFactory;
@@ -1445,8 +1444,6 @@ public final class Config implements Comparable<Config> {
 
       if (soyFunctionPlugins == null) {
         soyFunctionPlugins = ImmutableList.builder();
-        // always add this one
-        soyFunctionPlugins.add(XliffMsgPluginModule.class.getName());
       }
       soyFunctionPlugins.add(qualifiedName);
     }
@@ -1920,7 +1917,8 @@ public final class Config implements Comparable<Config> {
 
     private List<String> createSoyFunctionPluginNames() {
       if (this.soyFunctionPlugins == null) {
-        return ImmutableList.of(XliffMsgPluginModule.class.getName());
+        //return ImmutableList.of(XliffMsgPluginModule.class.getName());
+        return ImmutableList.of();
       }
       // TODO: Do we need to add any other modules than what we've configured?
       return this.soyFunctionPlugins.build();
