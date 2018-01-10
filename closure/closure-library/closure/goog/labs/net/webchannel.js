@@ -164,12 +164,6 @@ goog.net.WebChannel.FailureRecovery = function() {};
  * customized configs that are optimized for certain clients or environments.
  * Currently this information is sent via X-WebChannel-Client-Profile header.
  *
- * backChannelFailureRecovery: provide a custom algorithm for managing
- * failure recovery for back channel (server-to-client messaging). We may
- * extend this support to forward channel (client-to-server messaging) or
- * initial handshake too in future.
- *
- *
  * @typedef {{
  *   messageHeaders: (!Object<string, string>|undefined),
  *   initMessageHeaders: (!Object<string, string>|undefined),
@@ -185,9 +179,7 @@ goog.net.WebChannel.FailureRecovery = function() {};
  *   backgroundChannelTest: (boolean|undefined),
  *   fastHandshake: (boolean|undefined),
  *   disableRedact: (boolean|undefined),
- *   clientProfile: (string|undefined),
- *   backChannelFailureRecovery:
- *       (!goog.net.WebChannel.FailureRecovery|undefined)
+ *   clientProfile: (string|undefined)
  * }}
  */
 goog.net.WebChannel.Options;
@@ -679,6 +671,16 @@ goog.net.WebChannel.X_CLIENT_WIRE_PROTOCOL = 'X-Client-Wire-Protocol';
  * @type {string}
  */
 goog.net.WebChannel.X_HTTP_SESSION_ID = 'X-HTTP-Session-Id';
+
+
+/**
+ * A response header for the server to send back any initial response data as a
+ * header to avoid any possible buffering by an intermediary, which may
+ * be undesired during the handshake.
+ *
+ * @type {string}
+ */
+goog.net.WebChannel.X_HTTP_INITIAL_RESPONSE = 'X-HTTP-Initial-Response';
 
 
 /**
