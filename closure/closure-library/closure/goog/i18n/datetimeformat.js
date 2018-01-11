@@ -100,6 +100,18 @@ goog.require('goog.string');
  * @param {string|number} pattern pattern specification or pattern type.
  * @param {!Object=} opt_dateTimeSymbols Optional symbols to use for this
  *     instance rather than the global symbols.
+ *     You can use some of the predefined SHORT / MEDIUM / LONG / FULL patterns,
+ *     or the common patterns defined in goog.i18n.DateTimePatterns.
+ *     Examples:
+ *     <code><pre>
+ *       var fmt = new goog.i18n.DateTimeFormat(
+ *           goog.i18n.DateTimeFormat.Format.FULL_DATE);
+ *       var fmt = new goog.i18n.DateTimeFormat(
+ *           goog.i18n.DateTimePatterns.MONTH_DAY_YEAR_MEDIUM);
+ *     </pre></code>
+ *
+ * {@see goog.i18n.DateTimeFormat.Format}
+ * {@see goog.i18n.DateTimePatterns}
  * @final
  */
 goog.i18n.DateTimeFormat = function(pattern, opt_dateTimeSymbols) {
@@ -234,7 +246,7 @@ goog.i18n.DateTimeFormat.prototype.applyPattern_ = function(pattern) {
  *    object (for instance goog.date.Date) using a pattern with time fields.
  */
 goog.i18n.DateTimeFormat.prototype.format = function(date, opt_timeZone) {
-  if (!date) throw Error('The date to format must be non-null.');
+  if (!date) throw new Error('The date to format must be non-null.');
 
   // We don't want to write code to calculate each date field because we
   // want to maximize performance and minimize code size.
@@ -494,7 +506,7 @@ goog.i18n.DateTimeFormat.prototype.formatMonth_ = function(count, date) {
 goog.i18n.DateTimeFormat.validateDateHasTime_ = function(date) {
   if (date.getHours && date.getSeconds && date.getMinutes) return;
   // if (date instanceof Date || date instanceof goog.date.DateTime)
-  throw Error(
+  throw new Error(
       'The date to format has no time (probably a goog.date.Date). ' +
       'Use Date or goog.date.DateTime, or use a pattern without time fields.');
 };

@@ -1,5 +1,4 @@
 [alias]
-  closure-stylesheets = //closure/closure-stylesheets:closure-stylesheets
   plovr = //:plovr
 [java]
   src_roots = src, test

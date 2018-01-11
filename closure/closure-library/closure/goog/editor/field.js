@@ -51,7 +51,7 @@ goog.require('goog.events.EventType');
 goog.require('goog.events.KeyCodes');
 goog.require('goog.functions');
 goog.require('goog.html.SafeHtml');
-goog.require('goog.html.legacyconversions');
+goog.require('goog.html.SafeStyleSheet');
 goog.require('goog.log');
 goog.require('goog.log.Level');
 goog.require('goog.string');
@@ -134,10 +134,10 @@ goog.editor.Field = function(id, opt_doc) {
 
   /**
    * Additional styles to install for the editable field.
-   * @type {string}
+   * @type {!goog.html.SafeStyleSheet}
    * @protected
    */
-  this.cssStyles = '';
+  this.cssStyles = goog.html.SafeStyleSheet.EMPTY;
 
   // The field will not listen to change events until it has finished loading
   /** @private */
@@ -2160,26 +2160,6 @@ goog.editor.Field.prototype.getFieldCopy = function() {
  * Sets the contents of the field.
  * @param {boolean} addParas Boolean to specify whether to add paragraphs
  *    to long fields.
- * @param {?string} html html to insert.  If html=null, then this defaults
- *    to a nbsp for mozilla and an empty string for IE.
- * @param {boolean=} opt_dontFireDelayedChange True to make this content change
- *    not fire a delayed change event.
- * @param {boolean=} opt_applyLorem Whether to apply lorem ipsum styles.
- * @deprecated Use setSafeHtml instead.
- */
-goog.editor.Field.prototype.setHtml = function(
-    addParas, html, opt_dontFireDelayedChange, opt_applyLorem) {
-  var safeHtml =
-      html ? goog.html.legacyconversions.safeHtmlFromString(html) : null;
-  this.setSafeHtml(
-      addParas, safeHtml, opt_dontFireDelayedChange, opt_applyLorem);
-};
-
-
-/**
- * Sets the contents of the field.
- * @param {boolean} addParas Boolean to specify whether to add paragraphs
- *    to long fields.
  * @param {?goog.html.SafeHtml} html html to insert.  If html=null, then this
  *    defaults to a nsbp for mozilla and an empty string for IE.
  * @param {boolean=} opt_dontFireDelayedChange True to make this content change
@@ -2295,10 +2275,8 @@ goog.editor.Field.prototype.turnOnDesignModeGecko = function() {
  * @protected
  */
 goog.editor.Field.prototype.installStyles = function() {
-  if (this.cssStyles && this.shouldLoadAsynchronously()) {
-    goog.style.installSafeStyleSheet(
-        goog.html.legacyconversions.safeStyleSheetFromString(this.cssStyles),
-        this.getElement());
+  if (this.cssStyles.getTypedStringValue() && this.shouldLoadAsynchronously()) {
+    goog.style.installSafeStyleSheet(this.cssStyles, this.getElement());
   }
 };
 
@@ -2444,8 +2422,8 @@ goog.editor.Field.prototype.restoreSavedRange = function(opt_range) {
 /**
  * Makes a field editable.
  *
- * @param {!goog.html.TrustedResourceUrl|string=} opt_iframeSrc URL to set the
- *     iframe src to if necessary.
+ * @param {!goog.html.TrustedResourceUrl=} opt_iframeSrc URL to set the iframe
+ *     src to if necessary.
  */
 goog.editor.Field.prototype.makeEditable = function(opt_iframeSrc) {
   this.loadState_ = goog.editor.Field.LoadState_.LOADING;
@@ -2461,15 +2439,7 @@ goog.editor.Field.prototype.makeEditable = function(opt_iframeSrc) {
 
   goog.dom.classlist.add(field, 'editable');
 
-  var iframeSrc;
-  if (goog.isString(opt_iframeSrc)) {
-    iframeSrc =
-        goog.html.legacyconversions.trustedResourceUrlFromString(opt_iframeSrc);
-  } else {
-    iframeSrc = opt_iframeSrc;
-  }
-
-  this.makeEditableInternal(iframeSrc);
+  this.makeEditableInternal(opt_iframeSrc);
 };
 
 
@@ -2527,7 +2497,7 @@ goog.editor.Field.prototype.handleFieldLoad = function() {
  */
 goog.editor.Field.prototype.makeUneditable = function(opt_skipRestore) {
   if (this.isUneditable()) {
-    throw Error('makeUneditable: Field is already uneditable');
+    throw new Error('makeUneditable: Field is already uneditable');
   }
 
   // Fire any events waiting on a timeout.
@@ -2741,7 +2711,7 @@ goog.editor.Field.prototype.writeIframeContent = function(
     goog.editor.icontent.writeHttpsInitialIframe(formatInfo, doc, innerHtml);
   } else {
     var styleInfo = new goog.editor.icontent.FieldStyleInfo(
-        this.getElement(), this.cssStyles);
+        this.getElement(), this.cssStyles.getTypedStringValue());
     goog.editor.icontent.writeNormalInitialIframe(
         formatInfo, innerHtml, styleInfo, iframe);
   }

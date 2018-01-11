@@ -22,7 +22,6 @@ java_library(
     ':third-party-support-libs',
     '//third-party:COMPILE',
     '//closure/closure-library:closure-library',
-    '//closure/closure-stylesheets:closure-stylesheets',
   ],
 )
 
@@ -40,6 +39,5 @@ java_test(
     ':plovr-lib',
     '//third-party:COMPILE',
     '//third-party:TEST',
-    '//closure/closure-stylesheets:closure-stylesheets',
   ],
 )

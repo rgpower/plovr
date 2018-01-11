@@ -40,7 +40,6 @@ import com.google.template.soy.msgs.SoyMsgBundle;
 import com.google.template.soy.msgs.SoyMsgBundleHandler;
 import com.google.template.soy.msgs.SoyMsgException;
 import com.google.template.soy.msgs.SoyMsgPlugin;
-import com.google.template.soy.xliffmsgplugin.XliffMsgPluginModule;
 
 import org.plovr.util.Pair;
 import org.plovr.webdriver.WebDriverFactory;
@@ -206,9 +205,7 @@ public final class Config implements Comparable<Config> {
   private final List<LocationMapping> locationMappings;
 
   private final boolean strictModeInput;
-
   private final Set<Pattern> warningExcludePaths;
-
 
   /**
    * @param id Unique identifier for the configuration. This is used as an
@@ -673,9 +670,7 @@ public final class Config implements Comparable<Config> {
     return strictModeInput;
   }
 
-  public Set<Pattern> getWarningExcludePaths() {
-    return warningExcludePaths;
-  }
+  public Set<Pattern> getWarningExcludePaths() { return warningExcludePaths; }
 
   /**
    * @param path a relative path, such as "foo/bar_test.js" or
@@ -1203,7 +1198,7 @@ public final class Config implements Comparable<Config> {
 
     private List<LocationMapping> locationMappings = Lists.newArrayList();
 
-    private boolean strictModeInput = false;
+    private boolean strictModeInput;
 
     private Set<Pattern> warningExcludePaths = Sets.newHashSet();
 
@@ -1449,8 +1444,6 @@ public final class Config implements Comparable<Config> {
 
       if (soyFunctionPlugins == null) {
         soyFunctionPlugins = ImmutableList.builder();
-        // always add this one
-        soyFunctionPlugins.add(XliffMsgPluginModule.class.getName());
       }
       soyFunctionPlugins.add(qualifiedName);
     }
@@ -1761,12 +1754,12 @@ public final class Config implements Comparable<Config> {
       this.errorStream = Preconditions.checkNotNull(errorStream);
     }
 
-    public void addWarningExcludePath(Pattern path) {
-      warningExcludePaths.add(path);
-    }
-
     public void setStrictModeInput(boolean newVal) {
       this.strictModeInput = newVal;
+    }
+
+    public void addWarningExcludePath(Pattern path) {
+      warningExcludePaths.add(path);
     }
 
     public void resetWarningExcludePaths() {
@@ -1924,7 +1917,8 @@ public final class Config implements Comparable<Config> {
 
     private List<String> createSoyFunctionPluginNames() {
       if (this.soyFunctionPlugins == null) {
-        return ImmutableList.of(XliffMsgPluginModule.class.getName());
+        //return ImmutableList.of(XliffMsgPluginModule.class.getName());
+        return ImmutableList.of();
       }
       // TODO: Do we need to add any other modules than what we've configured?
       return this.soyFunctionPlugins.build();

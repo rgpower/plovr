@@ -15,6 +15,7 @@ import org.plovr.JsInput;
 import org.plovr.Manifest;
 
 import com.google.template.soy.SoyFileSet;
+import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.msgs.SoyMsgBundle;
 import com.google.template.soy.msgs.SoyMsgPlugin;
 import com.google.template.soy.msgs.SoyMsgBundleHandler.OutputFileOptions;
@@ -86,11 +87,15 @@ public class ExtractCommand extends AbstractCommandRunner<ExtractCommandOptions>
       }
       System.out.println("</translationbundle>");
     } else if (options.getFormat() == Format.XLIFF) {
+      ErrorReporter errorReporter = ErrorReporter.explodeOnErrorsAndIgnoreWarnings();
+      ErrorReporter.Checkpoint checkpoint = errorReporter.checkpoint();
       OutputFileOptions soyOutputFileOptions = new OutputFileOptions();
       soyOutputFileOptions.setSourceLocaleString(config.getLanguage());
       CharSequence output = new XliffMsgPlugin().generateExtractedMsgsFile(
-          convertToBundle(messages), soyOutputFileOptions);
-      System.out.print(output);
+          convertToBundle(messages, config.getLanguage()), soyOutputFileOptions, errorReporter);
+      if (errorReporter.errorsSince(checkpoint)) {
+        throw new com.google.template.soy.error.SoyCompilationException(errorReporter.getErrors());
+      }
     } else {
       System.err.println("Unknown format: " + options.getFormat());
     }
@@ -126,7 +131,7 @@ public class ExtractCommand extends AbstractCommandRunner<ExtractCommandOptions>
     return out.toString();
   }
 
-  private SoyMsgBundle convertToBundle(Iterable<JsMessage> messages) {
+  private SoyMsgBundle convertToBundle(Iterable<JsMessage> messages, String language) {
     List<SoyMsg> soyMsgs = Lists.newArrayList();
     for (JsMessage msg : messages) {
       List<SoyMsgPart> parts = Lists.newArrayList();
@@ -140,19 +145,23 @@ public class ExtractCommand extends AbstractCommandRunner<ExtractCommandOptions>
         }
       }
 
+      SoyMsg.Builder builder = SoyMsg.builder().setId(Long.valueOf(msg.getId()));
+      if (msg.getMeaning() != null) {
+        builder.setMeaning(msg.getMeaning());
+      }
+      if (language != null) {
+        builder.setLocaleString(language);
+      }
       soyMsgs.add(
-          new SoyMsg(
-              Long.valueOf(msg.getId()),
-              null /* localeString */,
-              msg.getMeaning(),
-              msg.getDesc(),
-              msg.isHidden(),
-              null /* contentType */,
-              new SourceLocation(msg.getSourceName()),
-              parts));
+          builder
+            .setDesc(msg.getDesc())
+            .setIsHidden(msg.isHidden())
+            .setSourceLocation(new SourceLocation(msg.getSourceName()))
+            .setParts(parts)
+            .build());
     }
 
-    return new SoyMsgBundleImpl(null, soyMsgs);
+    return new SoyMsgBundleImpl(language, soyMsgs);
   }
 
   static enum Format {

@@ -42,16 +42,21 @@ goog.require('goog.userAgentTestUtil.UserAgents');
 
 goog.setTestOnly('goog.style_test');
 
+// Delay running the tests after page load. This test has some asynchronous
+// behavior that interacts with page load detection.
+goog.testing.jsunit.AUTO_RUN_DELAY_IN_MS = 500;
+
 // IE before version 6 will always be border box in compat mode.
 var isBorderBox = goog.dom.isCss1CompatMode() ?
     (goog.userAgent.IE && !goog.userAgent.isVersionOrHigher('6')) :
     true;
 var EPSILON = 2;
-var expectedFailures = new goog.testing.ExpectedFailures();
+var expectedFailures;
 var $ = goog.dom.getElement;
 var mockUserAgent;
 
 function setUpPage() {
+  expectedFailures = new goog.testing.ExpectedFailures();
   // TODO(b/25875505): Fix unreported assertions (go/failonunreportedasserts).
   goog.testing.TestCase.getActiveTestCase().failOnUnreportedAsserts = false;
 
@@ -929,20 +934,6 @@ function testGetBounds() {
   assertEquals(pos.y, rect.top);
 }
 
-function testInstallStyles() {
-  var el = $('installTest0');
-  var originalBackground = goog.style.getBackgroundColor(el);
-
-  // Uses background-color because it's easy to get the computed value
-  var result = goog.style.installStyles(
-      '#installTest0 { background-color: rgb(255, 192, 203); }');
-
-  assertColorRgbEquals('rgb(255,192,203)', goog.style.getBackgroundColor(el));
-
-  goog.style.uninstallStyles(result);
-  assertEquals(originalBackground, goog.style.getBackgroundColor(el));
-}
-
 function testInstallSafeStyleSheet() {
   var el = $('installTest0');
   var originalBackground = goog.style.getBackgroundColor(el);
@@ -956,21 +947,6 @@ function testInstallSafeStyleSheet() {
 
   goog.style.uninstallStyles(result);
   assertEquals(originalBackground, goog.style.getBackgroundColor(el));
-}
-
-function testSetStyles() {
-  var el = $('installTest1');
-
-  // Change to pink
-  var ss = goog.style.installStyles(
-      '#installTest1 { background-color: rgb(255, 192, 203); }');
-
-  assertColorRgbEquals('rgb(255,192,203)', goog.style.getBackgroundColor(el));
-
-  // Now change to orange
-  goog.style.setStyles(
-      ss, '#installTest1 { background-color: rgb(255, 255, 0); }');
-  assertColorRgbEquals('rgb(255,255,0)', goog.style.getBackgroundColor(el));
 }
 
 function testSetSafeStyleSheet() {

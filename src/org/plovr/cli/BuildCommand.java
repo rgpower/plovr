@@ -29,7 +29,7 @@ import com.google.javascript.jscomp.JSError;
 import com.google.javascript.jscomp.Result;
 
 public class BuildCommand extends AbstractCommandRunner<BuildCommandOptions> {
-
+  private final static Logger logger = Logger.getLogger(org.plovr.cli.BuildCommand.class.getSimpleName());
   @Override
   BuildCommandOptions createOptions() {
     return new BuildCommandOptions();
@@ -41,7 +41,7 @@ public class BuildCommand extends AbstractCommandRunner<BuildCommandOptions> {
    */
   @Override
   int runCommandWithOptions(BuildCommandOptions options) throws IOException {
-    Logger.getLogger("org.plovr").setLevel(Level.WARNING);
+    //Logger.getLogger("org.plovr").setLevel(Level.WARNING);
 
     List<String> arguments = options.getArguments();
     if (arguments.size() < 1) {
@@ -57,10 +57,12 @@ public class BuildCommand extends AbstractCommandRunner<BuildCommandOptions> {
       Config config = builder.build();
       Compilation compilation;
       try {
+        logger.info("compilation started");
         compilation = Compilation.create(config);
         compilation.compile();
+        logger.info("compilation completed");
       } catch (CompilationException e) {
-        e.print(System.err);
+        logger.severe(e.getMessage());
         return 1;
       }
       boolean isSuccess = processResult(compilation, config, options.getSourceMapPath());

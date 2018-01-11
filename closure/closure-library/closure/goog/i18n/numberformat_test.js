@@ -25,6 +25,7 @@ goog.require('goog.i18n.NumberFormatSymbols_ar');
 goog.require('goog.i18n.NumberFormatSymbols_ar_u_nu_latn');
 goog.require('goog.i18n.NumberFormatSymbols_de');
 goog.require('goog.i18n.NumberFormatSymbols_en');
+goog.require('goog.i18n.NumberFormatSymbols_fi');
 goog.require('goog.i18n.NumberFormatSymbols_fr');
 goog.require('goog.i18n.NumberFormatSymbols_pl');
 goog.require('goog.i18n.NumberFormatSymbols_ro');
@@ -1032,6 +1033,16 @@ function testSignificantDigitsMoreThanMax() {
   assertEquals('0.13', fmt.format(0.1284));
 }
 
+function testNegativeDecimalFinnish() {
+  // Finnish uses a full-width dash for negative.
+  goog.i18n.NumberFormatSymbols = goog.i18n.NumberFormatSymbols_fi;
+
+  var fmt = new goog.i18n.NumberFormat(goog.i18n.NumberFormat.Format.DECIMAL);
+
+  var str = fmt.format(-123);
+  assertEquals('−123', str);
+}
+
 function testSimpleCompactFrench() {
   // Switch to French.
   goog.i18n.NumberFormatSymbols = goog.i18n.NumberFormatSymbols_fr;
@@ -1058,7 +1069,7 @@ function testSimpleCompactGerman() {
   // supposed to be interpreted as 'leave the number as-is'.
   // (The number itself will still be formatted with the '.', but no rounding)
   var str = fmt.format(1234);
-  assertEquals('1.234', str);
+  assertEquals('1,2 Tsd.', str);
 }
 
 function testSimpleCompact1() {

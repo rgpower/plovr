@@ -194,7 +194,7 @@ goog.ui.TabPane.prototype.create_ = function() {
       goog.dom.classlist.add(element, goog.getCssName('goog-tabpane-right'));
       break;
     default:
-      throw Error('Invalid tab location');
+      throw new Error('Invalid tab location');
   }
 
   // Listen for click and keydown events on header
@@ -491,10 +491,10 @@ goog.ui.TabPane.prototype.onHeaderKeyDown_ = function(event) {
  * @constructor
  */
 goog.ui.TabPane.TabPage = function(opt_el, opt_title, opt_domHelper) {
-  var title = null, el;
-  if (goog.isString(opt_el) && !goog.isDef(opt_title)) {
-    title = opt_el;
-  } else if (opt_title) {
+  /** @type {!Element|string|null} */
+  var title = null;
+  var el;
+  if (opt_title) {
     title = opt_title;
     el = opt_el;
   } else if (opt_el) {

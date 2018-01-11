@@ -1,4 +1,4 @@
-{namespace org.plovr autoescape="deprecated-noncontextual"}
+{namespace org.plovr}
 
 /**
  * @param title
@@ -6,7 +6,7 @@
  * @param testJsUrl
  * @param requires
  */
-{template .test}
+{template .test autoescape="deprecated-noncontextual"}
 <!doctype html>
 <html>
 <head>
@@ -30,7 +30,7 @@
  * @param configId
  * @param tests array of paths to _test.html URLs
  */
-{template .listTests}
+{template .listTests stricthtml="false"}
 <!doctype html>
 <html>
 <head>

@@ -2,6 +2,7 @@ java_library(
   name = 'COMPILE',
   visibility = ['PUBLIC'],
   exported_deps = [
+    ':com.google.closure-stylesheets-jar',
     ':com.google.template-soy-jar',
     ':javax.inject-javax.inject-jar',
     ':com.google.inject-guice-jar',
@@ -27,29 +28,40 @@ java_library(
     ':org.json-json-jar',
     ':com.google.javascript-closure-compiler-jar',
     ':com.google.javascript-closure-compiler-externs-jar',
-    ':com.google.errorprone-error_prone_annotations-jar',
-    ':com.google.jsinterop-jsinterop-annotations-jar',
     ':org.seleniumhq.selenium-selenium-java-jar',
-    ':org.seleniumhq.selenium-selenium-chrome-driver-jar',
+    ':org.seleniumhq.selenium-selenium-android-driver-jar',
     ':org.seleniumhq.selenium-selenium-remote-driver-jar',
-    ':org.seleniumhq.selenium-selenium-api-jar',
     ':cglib-cglib-nodep-jar',
-    ':org.apache.commons-commons-exec-jar',
+    ':org.seleniumhq.selenium-selenium-chrome-driver-jar',
+    ':org.seleniumhq.selenium-selenium-htmlunit-driver-jar',
+    ':org.seleniumhq.selenium-selenium-api-jar',
+    ':net.sourceforge.htmlunit-htmlunit-jar',
+    ':xalan-xalan-jar',
+    ':xalan-serializer-jar',
+    ':commons-collections-commons-collections-jar',
+    ':commons-lang-commons-lang-jar',
     ':org.apache.httpcomponents-httpmime-jar',
+    ':commons-codec-commons-codec-jar',
+    ':net.sourceforge.htmlunit-htmlunit-core-js-jar',
+    ':xerces-xercesImpl-jar',
+    ':xml-apis-xml-apis-jar',
+    ':net.sourceforge.nekohtml-nekohtml-jar',
+    ':net.sourceforge.cssparser-cssparser-jar',
+    ':org.w3c.css-sac-jar',
+    ':commons-logging-commons-logging-jar',
     ':org.apache.httpcomponents-httpclient-jar',
     ':org.apache.httpcomponents-httpcore-jar',
-    ':commons-logging-commons-logging-jar',
-    ':commons-codec-commons-codec-jar',
-    ':net.java.dev.jna-jna-platform-jar',
-    ':net.java.dev.jna-jna-jar',
-    ':org.seleniumhq.selenium-selenium-edge-driver-jar',
     ':org.seleniumhq.selenium-selenium-firefox-driver-jar',
+    ':commons-io-commons-io-jar',
+    ':org.apache.commons-commons-exec-jar',
     ':org.seleniumhq.selenium-selenium-ie-driver-jar',
-    ':org.seleniumhq.selenium-selenium-opera-driver-jar',
+    ':net.java.dev.jna-jna-jar',
+    ':net.java.dev.jna-platform-jar',
+    ':org.seleniumhq.selenium-selenium-iphone-driver-jar',
     ':org.seleniumhq.selenium-selenium-safari-driver-jar',
-    ':io.netty-netty-jar',
     ':org.seleniumhq.selenium-selenium-support-jar',
-    ':com.codeborne-phantomjsdriver-jar'
+    ':org.webbitserver-webbit-jar',
+    ':org.jboss.netty-netty-jar'
   ],
 )
 
@@ -57,7 +69,7 @@ java_library(
   name = 'OPTIONAL',
   visibility = ['PUBLIC'],
   exported_deps = [
- 
+
   ],
 )
 
@@ -119,21 +131,9 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-cglib-cglib-nodep-jar',
-  out = 'cglib-cglib-nodep-jar-3.2.4.jar',
-  url = 'mvn:cglib:cglib-nodep:jar:3.2.4',
-  sha1 = '42c972dee25a436b32c6027e848287ff47ed6750',
-)
-
-prebuilt_jar(
-  name = 'com.codeborne-phantomjsdriver-jar',
-  binary_jar = ':remote-com.codeborne-phantomjsdriver-jar',
-)
-
-remote_file(
-  name = 'remote-com.codeborne-phantomjsdriver-jar',
-  out = 'com.codeborne-phantomjsdriver-jar-1.3.0.jar',
-  url = 'mvn:com.codeborne:phantomjsdriver:jar:1.3.0',
-  sha1 = '670cb2d15e6fe65e08feff3312e757bb2eee6ff5',
+  out = 'cglib-cglib-nodep-jar-2.1_3.jar',
+  url = 'mvn:cglib:cglib-nodep:jar:2.1_3',
+  sha1 = '58d3be5953547c0019e5704d6ed4ffda3b0c7c66',
 )
 
 prebuilt_jar(
@@ -170,18 +170,6 @@ remote_file(
   out = 'com.google.common.html.types-types-jar-1.0.4.jar',
   url = 'mvn:com.google.common.html.types:types:jar:1.0.4',
   sha1 = '2adf4c8bfccc0ff7346f9186ac5aa57d829ad065',
-)
-
-prebuilt_jar(
-  name = 'com.google.errorprone-error_prone_annotations-jar',
-  binary_jar = ':remote-com.google.errorprone-error_prone_annotations-jar',
-)
-
-remote_file(
-  name = 'remote-com.google.errorprone-error_prone_annotations-jar',
-  out = 'com.google.errorprone-error_prone_annotations-jar-2.0.18.jar',
-  url = 'mvn:com.google.errorprone:error_prone_annotations:jar:2.0.18',
-  sha1 = '5f65affce1684999e2f4024983835efc3504012e',
 )
 
 prebuilt_jar(
@@ -251,9 +239,9 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-com.google.javascript-closure-compiler-jar',
-  out = 'com.google.javascript-closure-compiler-jar-v20170626.jar',
-  url = 'mvn:com.google.javascript:closure-compiler:jar:v20170626',
-  sha1 = '7715ed2dd240db4315887e0b43b8e7ecc9ad5587',
+  out = 'com.google.javascript-closure-compiler-jar-v20180101.jar',
+  url = 'mvn:com.google.javascript:closure-compiler:jar:v20180101',
+  sha1 = 'e9673261061a1fdc9ecc290256554281ccc501f2',
 )
 
 prebuilt_jar(
@@ -263,21 +251,9 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-com.google.javascript-closure-compiler-externs-jar',
-  out = 'com.google.javascript-closure-compiler-externs-jar-v20170626.jar',
-  url = 'mvn:com.google.javascript:closure-compiler-externs:jar:v20170626',
-  sha1 = '10dfdaeda0fe8ac07bbcf7b0e722e62fe8db35a6',
-)
-
-prebuilt_jar(
-  name = 'com.google.jsinterop-jsinterop-annotations-jar',
-  binary_jar = ':remote-com.google.jsinterop-jsinterop-annotations-jar',
-)
-
-remote_file(
-  name = 'remote-com.google.jsinterop-jsinterop-annotations-jar',
-  out = 'com.google.jsinterop-jsinterop-annotations-jar-1.0.0.jar',
-  url = 'mvn:com.google.jsinterop:jsinterop-annotations:jar:1.0.0',
-  sha1 = '23c3a3c060ffe4817e67673cc8294e154b0a4a95',
+  out = 'com.google.javascript-closure-compiler-externs-jar-v20180101.jar',
+  url = 'mvn:com.google.javascript:closure-compiler-externs:jar:v20180101',
+  sha1 = '9f6b791589a95a4db5d547c13a9bc03433008394',
 )
 
 prebuilt_jar(
@@ -299,9 +275,9 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-com.google.template-soy-jar',
-  out = 'com.google.template-soy-jar-2017-02-01.jar',
-  url = 'mvn:com.google.template:soy:jar:2017-02-01',
-  sha1 = '8638940b207779fe3b75e55b6e65abbefb6af678',
+  out = 'com.google.template-soy-jar-2018-01-03.jar',
+  url = 'mvn:com.google.template:soy:jar:2018-01-03',
+  sha1 = '62089a55675f338bdfb41fba1b29fe610f654b4d',
 )
 
 prebuilt_jar(
@@ -323,9 +299,45 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-commons-codec-commons-codec-jar',
-  out = 'commons-codec-commons-codec-jar-1.9.jar',
-  url = 'mvn:commons-codec:commons-codec:jar:1.9',
-  sha1 = '9ce04e34240f674bc72680f8b843b1457383161a',
+  out = 'commons-codec-commons-codec-jar-1.4.jar',
+  url = 'mvn:commons-codec:commons-codec:jar:1.4',
+  sha1 = '4216af16d38465bbab0f3dff8efa14204f7a399a',
+)
+
+prebuilt_jar(
+  name = 'commons-collections-commons-collections-jar',
+  binary_jar = ':remote-commons-collections-commons-collections-jar',
+)
+
+remote_file(
+  name = 'remote-commons-collections-commons-collections-jar',
+  out = 'commons-collections-commons-collections-jar-3.2.1.jar',
+  url = 'mvn:commons-collections:commons-collections:jar:3.2.1',
+  sha1 = '761ea405b9b37ced573d2df0d1e3a4e0f9edc668',
+)
+
+prebuilt_jar(
+  name = 'commons-io-commons-io-jar',
+  binary_jar = ':remote-commons-io-commons-io-jar',
+)
+
+remote_file(
+  name = 'remote-commons-io-commons-io-jar',
+  out = 'commons-io-commons-io-jar-2.0.1.jar',
+  url = 'mvn:commons-io:commons-io:jar:2.0.1',
+  sha1 = '7ffdb02f95af1c1a208544e076cea5b8e66e731a',
+)
+
+prebuilt_jar(
+  name = 'commons-lang-commons-lang-jar',
+  binary_jar = ':remote-commons-lang-commons-lang-jar',
+)
+
+remote_file(
+  name = 'remote-commons-lang-commons-lang-jar',
+  out = 'commons-lang-commons-lang-jar-2.6.jar',
+  url = 'mvn:commons-lang:commons-lang:jar:2.6',
+  sha1 = '0ce1edb914c94ebc388f086c6827e8bdeec71ac2',
 )
 
 prebuilt_jar(
@@ -335,21 +347,9 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-commons-logging-commons-logging-jar',
-  out = 'commons-logging-commons-logging-jar-1.2.jar',
-  url = 'mvn:commons-logging:commons-logging:jar:1.2',
-  sha1 = '4bfc12adfe4842bf07b657f0369c4cb522955686',
-)
-
-prebuilt_jar(
-  name = 'io.netty-netty-jar',
-  binary_jar = ':remote-io.netty-netty-jar',
-)
-
-remote_file(
-  name = 'remote-io.netty-netty-jar',
-  out = 'io.netty-netty-jar-3.5.7.Final.jar',
-  url = 'mvn:io.netty:netty:jar:3.5.7.Final',
-  sha1 = '811465e6dfc89d7c78d21de6a9747b6046cb5403',
+  out = 'commons-logging-commons-logging-jar-1.1.1.jar',
+  url = 'mvn:commons-logging:commons-logging:jar:1.1.1',
+  sha1 = '5043bfebc3db072ed80fbd362e7caf00e885d8ae',
 )
 
 prebuilt_jar(
@@ -377,18 +377,6 @@ remote_file(
 )
 
 prebuilt_jar(
-  name = 'javax.validation-validation-api-sources',
-  binary_jar = ':remote-javax.validation-validation-api-sources',
-)
-
-remote_file(
-  name = 'remote-javax.validation-validation-api-sources',
-  out = 'javax.validation-validation-api-sources-1.0.0.GA.jar',
-  url = 'mvn:javax.validation:validation-api:sources:1.0.0.GA',
-  sha1 = '7a561191db2203550fbfa40d534d4997624cd369',
-)
-
-prebuilt_jar(
   name = 'javax.validation-validation-api-jar',
   binary_jar = ':remote-javax.validation-validation-api-jar',
 )
@@ -398,6 +386,18 @@ remote_file(
   out = 'javax.validation-validation-api-jar-1.0.0.GA.jar',
   url = 'mvn:javax.validation:validation-api:jar:1.0.0.GA',
   sha1 = 'b6bd7f9d78f6fdaa3c37dae18a4bd298915f328e',
+)
+
+prebuilt_jar(
+  name = 'javax.validation-validation-api-sources',
+  binary_jar = ':remote-javax.validation-validation-api-sources',
+)
+
+remote_file(
+  name = 'remote-javax.validation-validation-api-sources',
+  out = 'javax.validation-validation-api-sources-1.0.0.GA.jar',
+  url = 'mvn:javax.validation:validation-api:sources:1.0.0.GA',
+  sha1 = '7a561191db2203550fbfa40d534d4997624cd369',
 )
 
 prebuilt_jar(
@@ -419,21 +419,69 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-net.java.dev.jna-jna-jar',
-  out = 'net.java.dev.jna-jna-jar-4.1.0.jar',
-  url = 'mvn:net.java.dev.jna:jna:jar:4.1.0',
-  sha1 = '1c12d070e602efd8021891cdd7fd18bc129372d4',
+  out = 'net.java.dev.jna-jna-jar-3.4.0.jar',
+  url = 'mvn:net.java.dev.jna:jna:jar:3.4.0',
+  sha1 = '803ff252fedbd395baffd43b37341dc4a150a554',
 )
 
 prebuilt_jar(
-  name = 'net.java.dev.jna-jna-platform-jar',
-  binary_jar = ':remote-net.java.dev.jna-jna-platform-jar',
+  name = 'net.java.dev.jna-platform-jar',
+  binary_jar = ':remote-net.java.dev.jna-platform-jar',
 )
 
 remote_file(
-  name = 'remote-net.java.dev.jna-jna-platform-jar',
-  out = 'net.java.dev.jna-jna-platform-jar-4.1.0.jar',
-  url = 'mvn:net.java.dev.jna:jna-platform:jar:4.1.0',
-  sha1 = '23457ad1cf75c2c16763330de5565a0e67b4bc0a',
+  name = 'remote-net.java.dev.jna-platform-jar',
+  out = 'net.java.dev.jna-platform-jar-3.4.0.jar',
+  url = 'mvn:net.java.dev.jna:platform:jar:3.4.0',
+  sha1 = 'e3f70017be8100d3d6923f50b3d2ee17714e9c13',
+)
+
+prebuilt_jar(
+  name = 'net.sourceforge.cssparser-cssparser-jar',
+  binary_jar = ':remote-net.sourceforge.cssparser-cssparser-jar',
+)
+
+remote_file(
+  name = 'remote-net.sourceforge.cssparser-cssparser-jar',
+  out = 'net.sourceforge.cssparser-cssparser-jar-0.9.5.jar',
+  url = 'mvn:net.sourceforge.cssparser:cssparser:jar:0.9.5',
+  sha1 = '7222f4a7e50fc57a88a546a228088524bdbbdaea',
+)
+
+prebuilt_jar(
+  name = 'net.sourceforge.htmlunit-htmlunit-jar',
+  binary_jar = ':remote-net.sourceforge.htmlunit-htmlunit-jar',
+)
+
+remote_file(
+  name = 'remote-net.sourceforge.htmlunit-htmlunit-jar',
+  out = 'net.sourceforge.htmlunit-htmlunit-jar-2.9.jar',
+  url = 'mvn:net.sourceforge.htmlunit:htmlunit:jar:2.9',
+  sha1 = 'b38b877dd9a10ae410ab2372eff7ff6c265962c7',
+)
+
+prebuilt_jar(
+  name = 'net.sourceforge.htmlunit-htmlunit-core-js-jar',
+  binary_jar = ':remote-net.sourceforge.htmlunit-htmlunit-core-js-jar',
+)
+
+remote_file(
+  name = 'remote-net.sourceforge.htmlunit-htmlunit-core-js-jar',
+  out = 'net.sourceforge.htmlunit-htmlunit-core-js-jar-2.9.jar',
+  url = 'mvn:net.sourceforge.htmlunit:htmlunit-core-js:jar:2.9',
+  sha1 = 'c90d338dddd18dd92ef0f933244b66db568b9f79',
+)
+
+prebuilt_jar(
+  name = 'net.sourceforge.nekohtml-nekohtml-jar',
+  binary_jar = ':remote-net.sourceforge.nekohtml-nekohtml-jar',
+)
+
+remote_file(
+  name = 'remote-net.sourceforge.nekohtml-nekohtml-jar',
+  out = 'net.sourceforge.nekohtml-nekohtml-jar-1.9.15.jar',
+  url = 'mvn:net.sourceforge.nekohtml:nekohtml:jar:1.9.15',
+  sha1 = 'a45cd7b7401d9c2264d4908182380452c03ebf8f',
 )
 
 prebuilt_jar(
@@ -443,9 +491,9 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-org.apache.commons-commons-exec-jar',
-  out = 'org.apache.commons-commons-exec-jar-1.3.jar',
-  url = 'mvn:org.apache.commons:commons-exec:jar:1.3',
-  sha1 = '8dfb9facd0830a27b1b5f29f84593f0aeee7773b',
+  out = 'org.apache.commons-commons-exec-jar-1.1.jar',
+  url = 'mvn:org.apache.commons:commons-exec:jar:1.1',
+  sha1 = '07dfdf16fade726000564386825ed6d911a44ba1',
 )
 
 prebuilt_jar(
@@ -455,9 +503,9 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-org.apache.httpcomponents-httpclient-jar',
-  out = 'org.apache.httpcomponents-httpclient-jar-4.5.2.jar',
-  url = 'mvn:org.apache.httpcomponents:httpclient:jar:4.5.2',
-  sha1 = '733db77aa8d9b2d68015189df76ab06304406e50',
+  out = 'org.apache.httpcomponents-httpclient-jar-4.1.2.jar',
+  url = 'mvn:org.apache.httpcomponents:httpclient:jar:4.1.2',
+  sha1 = '9003011c1b6d28a7331f04251a25e7ccf63c98f8',
 )
 
 prebuilt_jar(
@@ -467,9 +515,9 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-org.apache.httpcomponents-httpcore-jar',
-  out = 'org.apache.httpcomponents-httpcore-jar-4.4.4.jar',
-  url = 'mvn:org.apache.httpcomponents:httpcore:jar:4.4.4',
-  sha1 = 'b31526a230871fbe285fbcbe2813f9c0839ae9b0',
+  out = 'org.apache.httpcomponents-httpcore-jar-4.1.2.jar',
+  url = 'mvn:org.apache.httpcomponents:httpcore:jar:4.1.2',
+  sha1 = '39e30fb2ddfcf32b9dd663039ca6e847b698aa6f',
 )
 
 prebuilt_jar(
@@ -479,9 +527,9 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-org.apache.httpcomponents-httpmime-jar',
-  out = 'org.apache.httpcomponents-httpmime-jar-4.5.2.jar',
-  url = 'mvn:org.apache.httpcomponents:httpmime:jar:4.5.2',
-  sha1 = '22b4c53dd9b6761024258de8f9240c3dce6ea368',
+  out = 'org.apache.httpcomponents-httpmime-jar-4.1.2.jar',
+  url = 'mvn:org.apache.httpcomponents:httpmime:jar:4.1.2',
+  sha1 = 'c78eaaea68d0f36f73b646f08cdb34f1a784239b',
 )
 
 prebuilt_jar(
@@ -494,6 +542,18 @@ remote_file(
   out = 'org.hamcrest-hamcrest-core-jar-1.1.jar',
   url = 'mvn:org.hamcrest:hamcrest-core:jar:1.1',
   sha1 = '860340562250678d1a344907ac75754e259cdb14',
+)
+
+prebuilt_jar(
+  name = 'org.jboss.netty-netty-jar',
+  binary_jar = ':remote-org.jboss.netty-netty-jar',
+)
+
+remote_file(
+  name = 'remote-org.jboss.netty-netty-jar',
+  out = 'org.jboss.netty-netty-jar-3.2.7.Final.jar',
+  url = 'mvn:org.jboss.netty:netty:jar:3.2.7.Final',
+  sha1 = '1a1c5dde827576f3730bf6f3d7b389e770b90aaa',
 )
 
 prebuilt_jar(
@@ -593,15 +653,27 @@ remote_file(
 )
 
 prebuilt_jar(
+  name = 'org.seleniumhq.selenium-selenium-android-driver-jar',
+  binary_jar = ':remote-org.seleniumhq.selenium-selenium-android-driver-jar',
+)
+
+remote_file(
+  name = 'remote-org.seleniumhq.selenium-selenium-android-driver-jar',
+  out = 'org.seleniumhq.selenium-selenium-android-driver-jar-2.21.0.jar',
+  url = 'mvn:org.seleniumhq.selenium:selenium-android-driver:jar:2.21.0',
+  sha1 = 'c34e460052f45ef3e604409d9df90016413d1dc1',
+)
+
+prebuilt_jar(
   name = 'org.seleniumhq.selenium-selenium-api-jar',
   binary_jar = ':remote-org.seleniumhq.selenium-selenium-api-jar',
 )
 
 remote_file(
   name = 'remote-org.seleniumhq.selenium-selenium-api-jar',
-  out = 'org.seleniumhq.selenium-selenium-api-jar-3.0.0.jar',
-  url = 'mvn:org.seleniumhq.selenium:selenium-api:jar:3.0.0',
-  sha1 = 'aa45c634aead58a62f2b149fd249b5e2649bf8d1',
+  out = 'org.seleniumhq.selenium-selenium-api-jar-2.21.0.jar',
+  url = 'mvn:org.seleniumhq.selenium:selenium-api:jar:2.21.0',
+  sha1 = 'bf4932d31ce5f9e56d5f1fa5b14ce1b382ce9e3e',
 )
 
 prebuilt_jar(
@@ -611,21 +683,9 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-org.seleniumhq.selenium-selenium-chrome-driver-jar',
-  out = 'org.seleniumhq.selenium-selenium-chrome-driver-jar-3.0.0.jar',
-  url = 'mvn:org.seleniumhq.selenium:selenium-chrome-driver:jar:3.0.0',
-  sha1 = 'b5eb9f371c5dfacf6042990519df7bd7c4e80418',
-)
-
-prebuilt_jar(
-  name = 'org.seleniumhq.selenium-selenium-edge-driver-jar',
-  binary_jar = ':remote-org.seleniumhq.selenium-selenium-edge-driver-jar',
-)
-
-remote_file(
-  name = 'remote-org.seleniumhq.selenium-selenium-edge-driver-jar',
-  out = 'org.seleniumhq.selenium-selenium-edge-driver-jar-3.0.0.jar',
-  url = 'mvn:org.seleniumhq.selenium:selenium-edge-driver:jar:3.0.0',
-  sha1 = '896b59172d5e463092b4d57d7d856e7f8ca3ded9',
+  out = 'org.seleniumhq.selenium-selenium-chrome-driver-jar-2.21.0.jar',
+  url = 'mvn:org.seleniumhq.selenium:selenium-chrome-driver:jar:2.21.0',
+  sha1 = 'b232fcef87b7548cc77e2d3214cc504fbac51d13',
 )
 
 prebuilt_jar(
@@ -635,9 +695,21 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-org.seleniumhq.selenium-selenium-firefox-driver-jar',
-  out = 'org.seleniumhq.selenium-selenium-firefox-driver-jar-3.0.0.jar',
-  url = 'mvn:org.seleniumhq.selenium:selenium-firefox-driver:jar:3.0.0',
-  sha1 = '4d8bea27db349be23de284f4ae55bb4f39679851',
+  out = 'org.seleniumhq.selenium-selenium-firefox-driver-jar-2.21.0.jar',
+  url = 'mvn:org.seleniumhq.selenium:selenium-firefox-driver:jar:2.21.0',
+  sha1 = 'c05a4a5b09c783a881a13432d78dc2cc0ebdd26d',
+)
+
+prebuilt_jar(
+  name = 'org.seleniumhq.selenium-selenium-htmlunit-driver-jar',
+  binary_jar = ':remote-org.seleniumhq.selenium-selenium-htmlunit-driver-jar',
+)
+
+remote_file(
+  name = 'remote-org.seleniumhq.selenium-selenium-htmlunit-driver-jar',
+  out = 'org.seleniumhq.selenium-selenium-htmlunit-driver-jar-2.21.0.jar',
+  url = 'mvn:org.seleniumhq.selenium:selenium-htmlunit-driver:jar:2.21.0',
+  sha1 = '69953aaf779b3574cdb5efed7a78f7469737ea0b',
 )
 
 prebuilt_jar(
@@ -647,9 +719,21 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-org.seleniumhq.selenium-selenium-ie-driver-jar',
-  out = 'org.seleniumhq.selenium-selenium-ie-driver-jar-3.0.0.jar',
-  url = 'mvn:org.seleniumhq.selenium:selenium-ie-driver:jar:3.0.0',
-  sha1 = '9cb3299a8ae0325f49580e9e267044eabeaf53d2',
+  out = 'org.seleniumhq.selenium-selenium-ie-driver-jar-2.21.0.jar',
+  url = 'mvn:org.seleniumhq.selenium:selenium-ie-driver:jar:2.21.0',
+  sha1 = 'a47db3996c729bab12407b32a9966e530873925a',
+)
+
+prebuilt_jar(
+  name = 'org.seleniumhq.selenium-selenium-iphone-driver-jar',
+  binary_jar = ':remote-org.seleniumhq.selenium-selenium-iphone-driver-jar',
+)
+
+remote_file(
+  name = 'remote-org.seleniumhq.selenium-selenium-iphone-driver-jar',
+  out = 'org.seleniumhq.selenium-selenium-iphone-driver-jar-2.21.0.jar',
+  url = 'mvn:org.seleniumhq.selenium:selenium-iphone-driver:jar:2.21.0',
+  sha1 = '2b87b30782809c06fc97d7fc583768c21494b72d',
 )
 
 prebuilt_jar(
@@ -659,21 +743,9 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-org.seleniumhq.selenium-selenium-java-jar',
-  out = 'org.seleniumhq.selenium-selenium-java-jar-3.0.0.jar',
-  url = 'mvn:org.seleniumhq.selenium:selenium-java:jar:3.0.0',
-  sha1 = '104a856afc09db7a431f3ed16f1057cf26ef5c51',
-)
-
-prebuilt_jar(
-  name = 'org.seleniumhq.selenium-selenium-opera-driver-jar',
-  binary_jar = ':remote-org.seleniumhq.selenium-selenium-opera-driver-jar',
-)
-
-remote_file(
-  name = 'remote-org.seleniumhq.selenium-selenium-opera-driver-jar',
-  out = 'org.seleniumhq.selenium-selenium-opera-driver-jar-3.0.0.jar',
-  url = 'mvn:org.seleniumhq.selenium:selenium-opera-driver:jar:3.0.0',
-  sha1 = '08f2df7614296587709ba543899ad3244a929592',
+  out = 'org.seleniumhq.selenium-selenium-java-jar-2.21.0.jar',
+  url = 'mvn:org.seleniumhq.selenium:selenium-java:jar:2.21.0',
+  sha1 = '632a3316c3cf2261ff25eac26cdc72791dc45fd7',
 )
 
 prebuilt_jar(
@@ -683,9 +755,9 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-org.seleniumhq.selenium-selenium-remote-driver-jar',
-  out = 'org.seleniumhq.selenium-selenium-remote-driver-jar-3.0.0.jar',
-  url = 'mvn:org.seleniumhq.selenium:selenium-remote-driver:jar:3.0.0',
-  sha1 = '8981d300b08436ad9ed51b5242e5d254087355e9',
+  out = 'org.seleniumhq.selenium-selenium-remote-driver-jar-2.21.0.jar',
+  url = 'mvn:org.seleniumhq.selenium:selenium-remote-driver:jar:2.21.0',
+  sha1 = '87a39f0d02cae8a05468504ad1b0258ae9dc3eda',
 )
 
 prebuilt_jar(
@@ -695,9 +767,9 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-org.seleniumhq.selenium-selenium-safari-driver-jar',
-  out = 'org.seleniumhq.selenium-selenium-safari-driver-jar-3.0.0.jar',
-  url = 'mvn:org.seleniumhq.selenium:selenium-safari-driver:jar:3.0.0',
-  sha1 = 'f8615360b9263144baed86887634cfe57d14e61b',
+  out = 'org.seleniumhq.selenium-selenium-safari-driver-jar-2.21.0.jar',
+  url = 'mvn:org.seleniumhq.selenium:selenium-safari-driver:jar:2.21.0',
+  sha1 = '47ba1289d04428313998ca027160ea101159da11',
 )
 
 prebuilt_jar(
@@ -707,8 +779,91 @@ prebuilt_jar(
 
 remote_file(
   name = 'remote-org.seleniumhq.selenium-selenium-support-jar',
-  out = 'org.seleniumhq.selenium-selenium-support-jar-3.0.0.jar',
-  url = 'mvn:org.seleniumhq.selenium:selenium-support:jar:3.0.0',
-  sha1 = 'ff7080322d2682f78b9f5d503accf2a2676b7af8',
+  out = 'org.seleniumhq.selenium-selenium-support-jar-2.21.0.jar',
+  url = 'mvn:org.seleniumhq.selenium:selenium-support:jar:2.21.0',
+  sha1 = 'c473cc8ca648edf8f3af0984a589c14d0745c9ec',
 )
 
+prebuilt_jar(
+  name = 'org.w3c.css-sac-jar',
+  binary_jar = ':remote-org.w3c.css-sac-jar',
+)
+
+remote_file(
+  name = 'remote-org.w3c.css-sac-jar',
+  out = 'org.w3c.css-sac-jar-1.3.jar',
+  url = 'mvn:org.w3c.css:sac:jar:1.3',
+  sha1 = 'cdb2dcb4e22b83d6b32b93095f644c3462739e82',
+)
+
+prebuilt_jar(
+  name = 'org.webbitserver-webbit-jar',
+  binary_jar = ':remote-org.webbitserver-webbit-jar',
+)
+
+remote_file(
+  name = 'remote-org.webbitserver-webbit-jar',
+  out = 'org.webbitserver-webbit-jar-0.4.6.jar',
+  url = 'mvn:org.webbitserver:webbit:jar:0.4.6',
+  sha1 = 'e683ab46f7ebecdabc0acffb87821a58a01f0344',
+)
+
+prebuilt_jar(
+  name = 'xalan-serializer-jar',
+  binary_jar = ':remote-xalan-serializer-jar',
+)
+
+remote_file(
+  name = 'remote-xalan-serializer-jar',
+  out = 'xalan-serializer-jar-2.7.1.jar',
+  url = 'mvn:xalan:serializer:jar:2.7.1',
+  sha1 = '4b4b18df434451249bb65a63f2fb69e215a6a020',
+)
+
+prebuilt_jar(
+  name = 'xalan-xalan-jar',
+  binary_jar = ':remote-xalan-xalan-jar',
+)
+
+remote_file(
+  name = 'remote-xalan-xalan-jar',
+  out = 'xalan-xalan-jar-2.7.1.jar',
+  url = 'mvn:xalan:xalan:jar:2.7.1',
+  sha1 = '75f1d83ce27bab5f29fff034fc74aa9f7266f22a',
+)
+
+prebuilt_jar(
+  name = 'xerces-xercesImpl-jar',
+  binary_jar = ':remote-xerces-xercesImpl-jar',
+)
+
+remote_file(
+  name = 'remote-xerces-xercesImpl-jar',
+  out = 'xerces-xercesImpl-jar-2.9.1.jar',
+  url = 'mvn:xerces:xercesImpl:jar:2.9.1',
+  sha1 = '7bc7e49ddfe4fb5f193ed37ecc96c12292c8ceb6',
+)
+
+prebuilt_jar(
+  name = 'xml-apis-xml-apis-jar',
+  binary_jar = ':remote-xml-apis-xml-apis-jar',
+)
+
+remote_file(
+  name = 'remote-xml-apis-xml-apis-jar',
+  out = 'xml-apis-xml-apis-jar-1.3.04.jar',
+  url = 'mvn:xml-apis:xml-apis:jar:1.3.04',
+  sha1 = '90b215f48fe42776c8c7f6e3509ec54e84fd65ef',
+)
+
+prebuilt_jar(
+  name = 'com.google.closure-stylesheets-jar',
+  binary_jar = ':remote-com.google.closure-stylesheets-jar',
+)
+
+remote_file(
+  name = 'remote-com.google.closure-stylesheets-jar',
+  out = 'com.google.closure-stylesheets-jar-1.5.0.jar',
+  url = 'mvn:com.google.closure-stylesheets:closure-stylesheets:jar:1.5.0',
+  sha1 = '0d2b1c0dcba2ac4e13f28721f89134f7333fed2c',
+)

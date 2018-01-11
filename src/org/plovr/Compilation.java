@@ -3,10 +3,8 @@ package org.plovr;
 import java.io.File;
 import java.io.IOException;
 import java.io.Writer;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.logging.Logger;
 
 import javax.annotation.Nullable;
@@ -108,14 +106,55 @@ public final class Compilation {
     // Generate all the code upfront, and track any syntax errors in individual
     // generated files.
     Set<JsInput> allDependencies = config.getManifest().getAllDependencies();
-    List<CompilationException> errors = new ArrayList<>();
-    for (JsInput input : allDependencies) {
-      try {
-        input.getCode();
-      } catch (Throwable e) {
-        errors.add(toCheckedException(e));
+    final List<CompilationException> errors = new ArrayList<>();
+    final ExecutorService executorService = Executors.newCachedThreadPool();
+    List<JsInput> inputs = new ArrayList();
+    inputs.addAll(allDependencies);
+    // push the potentially longer getCode calls to the front
+    Collections.sort(inputs, new Comparator<JsInput>() {
+      @Override
+      public int compare(JsInput o1, JsInput o2) {
+        if (o1 instanceof JSXFile && !(o2 instanceof JSXFile)) {
+          return -1;
+        } else if (o2 instanceof JSXFile && !(o1 instanceof JSXFile)) {
+          return 1;
+        }
+        if (o1 instanceof SoyFile && !(o2 instanceof SoyFile)) {
+          return -1;
+        } else if (o2 instanceof SoyFile && !(o1 instanceof SoyFile)) {
+          return 1;
+        }
+        return o1.getName().compareTo(o2.getName());
       }
+    });
+    for (final JsInput input : inputs) {
+      executorService.submit(new Runnable() {
+        public void run() {
+          try {
+            input.getCode();
+            logger.config(String.format("LOADED [%s]", input.getName()));
+          } catch (Throwable e) {
+            errors.add(toCheckedException(e));
+          }
+        }
+      });
     }
+
+    try {
+      executorService.shutdown();
+      executorService.awaitTermination(Long.MAX_VALUE, TimeUnit.MILLISECONDS);
+      logger.info(String.format("LOADED %d inputs", inputs.size()));
+    } catch (InterruptedException e) {
+      throw toCheckedException(e);
+    }
+
+//    for (JsInput input : allDependencies) {
+//      try {
+//        input.getCode();
+//      } catch (Throwable e) {
+//        errors.add(toCheckedException(e));
+//      }
+//    }
 
     if (!errors.isEmpty()) {
       throw new CompilationException.Multi(errors);

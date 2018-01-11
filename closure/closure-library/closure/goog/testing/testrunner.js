@@ -36,6 +36,7 @@ goog.provide('goog.testing.TestRunner');
 
 goog.require('goog.dom');
 goog.require('goog.dom.TagName');
+goog.require('goog.dom.safe');
 goog.require('goog.testing.TestCase');
 
 
@@ -117,7 +118,8 @@ goog.testing.TestRunner.prototype.getUniqueId = function() {
  */
 goog.testing.TestRunner.prototype.initialize = function(testCase) {
   if (this.testCase && this.testCase.running) {
-    throw Error('The test runner is already waiting for a test to complete');
+    throw new Error(
+        'The test runner is already waiting for a test to complete');
   }
   this.testCase = testCase;
   this.initialized = true;
@@ -155,16 +157,23 @@ goog.testing.TestRunner.prototype.isInitialized = function() {
 
 
 /**
- * Returns true if the test runner is finished.
+ * Returns false if the test runner has not finished successfully.
  * Used by Selenium Hooks.
- * @return {boolean} Whether the test runner is active.
+ * @return {boolean} Whether the test runner is not active.
  */
 goog.testing.TestRunner.prototype.isFinished = function() {
-  return this.errors.length > 0 ||
-      this.initialized && !!this.testCase && this.testCase.started &&
-      !this.testCase.running;
+  return this.errors.length > 0 || this.isComplete();
 };
 
+
+/**
+ * Returns true if the test runner is finished.
+ * @return {boolean} True if the test runner started and subsequently completed.
+ */
+goog.testing.TestRunner.prototype.isComplete = function() {
+  return this.initialized && !!this.testCase && this.testCase.started &&
+      !this.testCase.running;
+};
 
 /**
  * Returns true if the test case didn't fail.
@@ -192,6 +201,12 @@ goog.testing.TestRunner.prototype.hasErrors = function() {
  * @param {string} msg Error message.
  */
 goog.testing.TestRunner.prototype.logError = function(msg) {
+  if (this.isComplete()) {
+    // Once the user has checked their code, subsequent errors can occur
+    // because of tearDown actions. For now, log these but do not fail the test.
+    this.log('Error after test completed: ' + msg);
+    return;
+  }
   if (!this.errorFilter_ || this.errorFilter_.call(null, msg)) {
     this.errors.push(msg);
   }
@@ -269,13 +284,13 @@ goog.testing.TestRunner.prototype.getNumFilesLoaded = function() {
  */
 goog.testing.TestRunner.prototype.execute = function() {
   if (!this.testCase) {
-    throw Error(
+    throw new Error(
         'The test runner must be initialized with a test case ' +
         'before execute can be called.');
   }
 
   if (this.strict_ && this.testCase.getCount() == 0) {
-    throw Error(
+    throw new Error(
         'No tests found in given test case: ' + this.testCase.getName() + '. ' +
         'By default, the test runner fails if a test case has no tests. ' +
         'To modify this behavior, see goog.testing.TestRunner\'s ' +
@@ -401,7 +416,7 @@ goog.testing.TestRunner.prototype.writeLog = function(log) {
       a.innerHTML = '(run individually)';
       a.style.fontSize = '0.8em';
       a.style.color = '#888';
-      a.href = href;
+      goog.dom.safe.setAnchorHref(a, href);
       div.appendChild(document.createTextNode(' '));
       div.appendChild(a);
     }
