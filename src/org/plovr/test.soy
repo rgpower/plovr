@@ -30,34 +30,28 @@
  * @param configId
  * @param tests array of paths to _test.html URLs
  */
-{template .listTests stricthtml="false"}
+{template .listTests}
 <!doctype html>
 <html>
 <head>
   <title>{$configId} Tests</title>
 </head>
 <body>
+  <ul>
 {foreach $test in $tests}
   {if isFirst($test)}
     <h3>All Tests ({length($tests)})</h3>
 
     <a href="all">Run all tests</a>
     <p>
-
-    <ul>
-  {/if}
-
-    <li><a href="/test/{$configId}/{$test}">{$test}</a>
-
-  {if isLast($test)}
-    </ul>
-  {/if}
-
+   {/if}
+     <li><a href="/test/{$configId}/{$test}">{$test}</a></li>
 {ifempty}
   No tests for {$configId}.
   {sp}
   <a href="/">Back to the config list.</a>
 {/foreach}
+  </ul>
 </body>
 </html>
 {/template}
@@ -68,7 +62,7 @@
  * @param configId
  * @param tests array of paths to _test.html URLs
  */
-{template .all}
+{template .all autoescape="deprecated-noncontextual"}
 <!doctype html>
 <html>
 <head>
@@ -92,7 +86,7 @@
  * @param baseJsUrl
  * @param tests array of paths to _test.html URLs
  */
-{template .testRunner}
+{template .testRunner autoescape="deprecated-noncontextual"}
 {call .testRunnerCss /}
 
 <h1>{$configId} - All JsUnit Tests</h1>
